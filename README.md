@@ -1,4 +1,4 @@
-![ConduitLogo](Conduit/Assets/Conduit1.jpg)
+![ConduitLogo](Assets/Conduit1.jpg)
 
 # Conduit
 A Minecraft tool that runs above the server with APIs to fetch useful datas, edit properties and run commands
