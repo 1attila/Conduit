@@ -23,7 +23,7 @@ Don't use this yet, horewer i will be glad if you could check the code and give 
 - Security: servers configs are designed to don't leak any private information (e.g. Rcon password). This will be really useful when plugins will be implemented.
 
 ## Future Features
-- Event system: all the events are already present in Handler and Server class but they are not implemented yet
+- Event system: all the events are already present in `Handler` and `Server` class but they are not implemented yet
 - Minecraft Json text: Like MCDReforged RText library
 - Plugins: Like MCDReforged plugins
 - More fetching
@@ -33,8 +33,8 @@ Don't use this yet, horewer i will be glad if you could check the code and give 
 ## How to run/use:
 - Setup a classic minecraft server
 - Clone/download the repo into a folder above the server folder
-- Setup config.json
-- Open a command prompt and run python main.py into the Conduit folder (This should start the servers processes and displaying all their output on the console)
+- Setup `config.json`
+- Open a command prompt and run `python main.py` into the Conduit folder (This should start the servers processes and displaying all their output on the console)
 
 ## Credits
 - MCDaemon: Run server process with Popen
