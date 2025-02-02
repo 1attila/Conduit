@@ -1,4 +1,6 @@
-![ConduitLogo](https://raw.githubusercontent.com/1attila/Conduit/master/logo/Assets/Conduit1_long.png)
+![ConduitLogo](https://raw.githubusercontent.com/1attila/Conduit/blob/main/Assets/Conduit1_long.png)
+
+https://github.com/1attila/Conduit/blob/main/Assets/Conduit1.png
 # Conduit
 A Minecraft tool that runs above the server with APIs to fetch useful datas, edit properties and run commands
 
