@@ -1,0 +1,4 @@
+Set: # Cli: Set <variable> = <value>
+  "Set"
+Language is now set to x: # Cli
+  "Language is now set to english"
