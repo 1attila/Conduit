@@ -20,11 +20,11 @@ Don't use this yet, horewer i will be glad if you could check the code and give 
 - CommandsAPI: ability to run every command via Rcon
 - Cli: Simple cli with the ability to execute commands from the servers, read and edit some server propetiers directly from the console
 - Languages: supports multiple languages. Main language can be set in the server config.json file.
+- Event system: most of them are supported but a couple of them are missing.
+- Minecraft fancy text: like MCDReforged RText
 - Security: servers configs are designed to don't leak any private information (e.g. Rcon password). This will be really useful when plugins will be implemented.
 
 ## Future Features
-- Event system: all the events are already present in `Handler` and `Server` class but they are not implemented yet
-- Minecraft Json text: Like MCDReforged RText library
 - Plugins: Like MCDReforged plugins
 - More fetching
 - More commands
