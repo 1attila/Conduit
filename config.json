@@ -1,0 +1,16 @@
+{
+    "default_language": "en_us",
+    "command_prefix": "!!",
+
+    "servers":
+    [
+        {
+            "name": "SMP",
+            "names": ["smp", "survival"],
+            "path": "C:\\Users\\Hp\\Desktop\\handler\\server",
+            "start_command": "java -Xms1024M -Xmx2048M -jar C:\\Users\\Hp\\Desktop\\handler\\server\\server.jar --nogui",
+            "high_permissions": false,
+            "rcon_config": {"address": "127.0.0.1", "port": 25565, "password": "password"}
+        }
+    ]
+}
