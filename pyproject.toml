@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "conduit"
+version = "0.1.0"
+description = "A tool to control multiple Minecraft servers with Python!"
+readme = "README.md"
+authors = [{ name = "attila" }]
+license = { file = "LICENSE" }
+dependencies = [
+    "parse",
+    "rcon",
+    "PyYAML"
+]
+requires-python = ">=3.8"
+
+[project.scripts]
+conduit = "conduit.__main__:main"
+
+[project.urls]
+"Homepage" = "https://github.com/1attila/Conduit"
