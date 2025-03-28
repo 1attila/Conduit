@@ -1,0 +1,13 @@
+# python stuffs
+__pycache__/
+.venv/
+.mypy_cache/
+*.pyc
+
+# pypi
+/build/
+/dist/
+*.egg-info/
+
+# env
+/venv/
