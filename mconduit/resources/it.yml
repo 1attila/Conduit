@@ -1,0 +1,78 @@
+Set: # Cli
+  "Impostato"
+Language is now set to: # Cli
+  "La lingua è ora impostata su"
+No server was found in <file_path>: # load_config
+  "Nessun server è stato trovato in {0}"
+Do you want conduit to find them for you (Y/N)?: # load_config
+  "Vuoi che conduit le cerchi per te (Y/N)?"
+proceed? >:
+  "procedere? > "
+Finding all possible servers, this operation can take some time: # load_config
+  "Cercando tutti i possibili server, questa operazione può richiedere un po' di tempo"
+Found one at <path> how should be called? (press send to skip): # load_config
+  "Trovato uno a {0} come deve essere chiamato? (premi invio per saltare)"
+Found all possible servers: # load_config
+  "Trovati tutti i possibili server"
+Global Configuration (2/2): # prefix_setter
+  "Configurazioni Globali (2/2)"
+Select the command prefix you want to use in Minecraft:: # prefix_setter
+  "Seleziona il prefisso per i comandi che vuoi usare su Minecraft:"
+Add Server - Finder method: # add_server
+  "Aggiunta Server - Metodo di ricerca"
+Select how you want to add the server: # add_server
+  "Scegli come vuoi aggiungere il server"
+Automatic : # add_server
+  "Automatico "
+Scan this machine to find all Minecraft servers: # add_server
+  "Scansiona questa macchina per trovare tutti i server Minecraft"
+Manual    : # add_server
+  "Manuale    "
+Input the directory of the server: # add_server
+  "Inserisci la cartella del server"
+Download  : # add_server
+  "Scarica    "
+Create a new one: # add_server
+  "Creane uno nuovo"
+Add Server - Input path: # add_server
+  "Aggiunta Server - Inserisci percorso"
+Input the directory where the Minecraft server is located:: # add_server
+  "Inserisci il percorso dove e' presente il server Minecraft:"
+Add Server - Choose type (1/3): # add_server
+  "Aggiunta Server - Scegli un tipo (1/3)"
+Select what kind of server you want to download: # add_server
+  "Scegli che tipo di server vuoi scaricare"
+Server Download - Choose snapshots (1.1/3): # version_selector
+  "Scarica Server - Scegli snapshot (1.1/3)"
+Do you want to install a snapshot?: # version_selector
+  "Vuoi installare uno snapshot?"
+Server Download (2/3): # version_selector
+  "Scarica Server (2/3)"
+Select the version of the server:: # version_selector
+  "Seleziona la versione del server:"
+No version found!: # version_selector
+  "Nessuna versione trovata!"
+You must create the server manually!: # version_selector
+  "Devi creare il server manualmente!"
+Server Download (3/3):
+  "Scarica server (3/3)"
+Select where you want to download the server:
+  "Seleziona dove vuoi scaricare il server"
+Server download failed!:
+  "Il download del server e' fallito!"
+Server downloaded sucesfully!:
+  "Download del server avvenuto con successo!"
+Do you agree to Minecraft EULA?:
+  "Accetti l'EULA di Minecraft?"
+Configure server - basic configs (1/3):
+  "Configurazione server - configurazioni base (1/3)"
+name(s):
+  "nome/i"
+start command:
+  "comando di avvio"
+lang:
+  "lingua"
+modify server.properties:
+  "modifica server.properties"
+Configure server - Rcon configs (2/3):
+  "Configurazione server - configurazione Rcon (2/3)"

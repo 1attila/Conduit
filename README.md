@@ -1,148 +1,213 @@
-[![Python Versions](https://img.shields.io/pypi/pyversions/mcdreforged.svg)](https://pypi.org/project/mc-handler)
-[![PyPI Version](https://img.shields.io/pypi/v/mcdreforged.svg)](https://pypi.org/project/mcdreforged)
+<div align="center">
+  
+  <img src="https://github.com/1attila/Conduit/blob/main/assets/conduit_logo.svg?raw=true" alt="Conduit Logo" width=600/>
 
-![ConduitLogo](https://github.com/1attila/Conduit/blob/main/Assets/ConduitLongLogo.jpg?raw=true)
+  [![Python Versions](https://img.shields.io/pypi/pyversions/mconduit.svg)](https://pypi.org/project/mconduit)
+  [![PyPI Version](https://img.shields.io/pypi/v/mconduit.svg)](https://pypi.org/project/mconduit)
+  [![License](https://img.shields.io/github/license/1attila/Conduit.svg)](https://github.com/1attila/Conduit/blob/main/LICENSE)
 
-# Conduit
+  <p><b>A powerful, lightweight, and independent Python framework for building Minecraft server plugins.</b></p>
+</div>
 
-Conduit is a tool to control multiple Minecraft servers using Python.
+---
 
-It's an alternative to [MCDReforged](https://github.com/MCDReforged/MCDReforged) but easier to use/setup.
+## ✨ See it in action!
+Conduit unlocks completely new possibilities for Vanilla Minecraft servers using the power of Python. Here are just a few examples of what you can build:
 
-Rigth now MCDR it's probably the best option, unless you want to setup a simple command system very quickly.
-If you want anyway, you can use both MCDR and Conduit without problems.
+<table align="center">
+  <tr>
+    <td align="center" width="50%">
+      <img src="https://github.com/1attila/Conduit/blob/main/assets/renderer_plugin.png?raw=true" alt="Renderer Plugin" width="100%"><br>
+      <b>📸 Renderer</b><br>
+      Render in-game screenshots and automatically send them via a Discord bot!
+    </td>
+    <td align="center" width="50%">
+      <img src="https://github.com/1attila/Conduit/blob/main/assets/litematic_plugin.png?raw=true" alt="Litematic Plugin" width="100%"><br>
+      <b>🏗️ Litematic</b><br>
+      A pure, mod-less Python implementation for loading Litematica schematics directly into your world.
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="https://github.com/1attila/Conduit/blob/main/assets/picture_loader_plugin.png?raw=true" alt="PictureLoader Plugin" width="100%"><br>
+      <b>🖼️ PictureLoader</b><br>
+      Load high-quality, realistic images directly in-game.
+    </td>
+    <td align="center" width="50%">
+      <img src="https://github.com/1attila/Conduit/blob/main/assets/status_plugin.png?raw=true" alt="Status Plugin" width="100%"><br>
+      <b>🖥️ Status</b><br>
+      Fetch and monitor the real-time status of any machine running on the server.
+    </td>
+  </tr>
+</table>
 
-## How does it works
-Conduit uses Pygtail to read server logs and extract useful informations and dispatch events.
-It can also execute commands and fetch player informations via Rcon.
+## 📖 What is Conduit?
 
-## Key features
-Conduit is designed to be:
-- Easy to install
-- Run indipendently from server
-- Updated without restart the server
-- Easy to develop
-- Safe
+Conduit is an easy-to-use tool that allows you to control one or multiple Minecraft servers using Python. 
 
-## Conduit vs MCDReforged
-Conduit and MCDReforged do almost the same thing but there are some key differences: Conduit doesn't run the Minecraft server directly, but in a parallel process.
+It is designed with flexibility in mind and can be used in two ways:
+1. **As a Standalone Program:** Run `python -m mconduit` from your console, and it will automatically load all your plugins, connect to your servers, and start listening to events. Look [how to install](https://github.com/1attila/Conduit/wiki/How-to-install) (it's very quick and easy)!
 
-This is a simple scheme of how Conduit works:
+
+2. **As an API Framework:** Import `mconduit` directly into your own Python applications to harness its powerful features - like Rcon dispatching, log-tailing, and data fetching - on your own terms.
+
+## 🚀 Key Features
+
+- **Completely Independent:** Runs in a parallel process. Update or restart Conduit without having to restart your Minecraft server!
+- **Modern Python API:** Clean, intuitive, and strongly typed APIs for the best Developer Experience (DX).
+- **Event-Driven:** Uses Pygtail to actively read server logs, efficiently extracting useful information to trigger your custom events.
+- **Rcon Integration:** Execute commands and fetch player information seamlessly via Rcon.
+- **Rich Feature Set:** Built-in support for Permissions, Custom Commands, Multilingual translation, JSON Text generation, Data fetching, and a comprehensive CLI.
+
+---
+
+## ⚙️ How it Works (Conduit vs MCDR)
+
+Conduit is highly inspired by [MCDReforged](https://github.com/MCDReforged/MCDReforged), but with a major architectural difference: **Conduit doesn't run the Minecraft server directly.** It runs in a parallel process, communicating via Pygtail (Logs) and Rcon. 
+
+This prevents server crashes if something fails and makes it reloadable at runtime!
+
+Another important difference is that Conduit allows managing multiple servers from a single instance.
+
+### The Conduit Architecture
+```mermaid
+flowchart LR
+    %% Colors and Styles
+    classDef user fill:#f9a826,stroke:#333,stroke-width:2px,color:#000;
+    classDef conduit fill:#2196f3,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef plugin fill:#ffca28,stroke:#333,stroke-width:2px,color:#000;
+    classDef mc fill:#4caf50,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef log fill:#607d8b,stroke:#fff,stroke-width:1px,color:#fff;
+
+    U([👤 User]):::user
+
+    subgraph ConduitSystem["Conduit Framework (Single Process)"]
+        direction TB
+
+        Handler(⚙️ Handler):::conduit
+        Plug([🧩 Plugins]):::plugin
+
+        Plug <--> Handler
+    end    
+
+    %% Servers
+    subgraph S1["Survival Server"]
+        direction TB
+
+        MC1(Minecraft):::mc
+        L1(📄 latest.log):::log
+        MC1 --> L1
+    end
+
+    subgraph S2 ["Creative Server"]
+        direction TB
+
+        MC2(Minecraft):::mc
+        L2(📄 latest.log):::log
+        MC2 --> L2
+    end
+
+    %% User Interaction
+    U <-.->|💻 CLI| Handler
+
+    %% Connections
+
+    Handler <-.->|🛜 Rcon| MC1
+    Handler <--->|📜 Pygtail| L1
+    
+    Handler <-.->|🛜 Rcon| MC2
+    Handler <--->|📜 Pygtail| L2
+```
+
+This instead is a simplified scheme of how **MCDR** works:
 
 ```mermaid
 flowchart LR
+    %% Colors and Styles
+    classDef user fill:#f9a826,stroke:#333,stroke-width:2px,color:#000;
+    classDef mcdr fill:#2196f3,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef plugin fill:#ffca28,stroke:#333,stroke-width:2px,color:#000;
+    classDef mc fill:#4caf50,stroke:#fff,stroke-width:2px,color:#fff;
 
-    c("Conduit")
+    U([👤 User]):::user
 
-    s1("Minecraft Survival server")
-    s2("Minecraft Creative server")
-    s3("Minecraft Mirror server")
+    subgraph Env1["Survival Environment"]
+        direction TB
 
-    cli("Cli")
+        M1(⚙️ MCDR):::mcdr
+        P1([🧩 Plugins]):::plugin
+        S1(Minecraft):::mc
+        
+        M1 <--> P1
+        M1 <-->|Stdio| S1
+    end
 
-    s1 --> Pygtail --> c
-    s2 --> Pygtail --> c
-    s3 --> Pygtail --> c
+    subgraph Env2 ["Creative Environment"]
+        direction TB
 
-    c <--> r1("Rcon") <--> s1
-    c <--> r2("Rcon") <--> s2
-    c <--> r3("Rcon") <--> s3
+        M2(⚙️ MCDR):::mcdr
+        P2([🧩 Plugins]):::plugin
+        S2(Minecraft):::mc
+        
+        M2 <--> P2
+        M2 <-->|Stdio| S2
+    end
 
-    c <--> cli
-    c <--> p("Plugins")
-    cli <-.-> u[/user/]
+    %% User Interaction
+    U <-.->|💻 CLI| M1
+    U <-.->|💻 CLI| M2
 ```
 
-This instead is a simplified scheme of how MCDR works:
+### Why choose Conduit?
 
-```mermaid
-flowchart LR
+**Pros**:
+- Easier and faster setup out of the box.
 
-    subgraph Mirror server
-    m3("MCDR")
-    s3("Minecraft Mirror server")
-    c3("Cli")
+- Completely independent process (safeguards your MC server uptime).
 
-    c3 <--> m3 <--> s3
-    m3 <--> p3("Plugins")
-    end
+- Update and reload plugins without stopping the Minecraft server.
 
-    subgraph Creative server
-    m2("MCDR")
-    s2("Minecraft Creative server")
-    c2("Cli")
+- One central CLI to manage handlers/attributes across multiple servers.
 
-    c2 <--> m2 <--> s2
-    m2 <--> p2("Plugins")
-    end
+- Extremely nice and pythonic API.
 
-    subgraph Survival server
-    m1("MCDR")
-    s1("Minecraft Survival server")
-    c1("Cli")
 
-    c1 <--> m1 <--> s1
-    m1 <--> p1("Plugins")
-    end
+**Current Limitations**:
 
-    user[/user/] <-.-> c1 & c2 & c3
+- Currently only fully supports Vanilla (Bukkit/Spigot/Paper support coming soon).
+
+---
+
+## 🛠️ Quick Start
+
+It's much easier to set up than you might think! Install Conduit via pip:
+
+```bash
+pip install mconduit
 ```
 
-### Pros (better than MCDR)
-- Easier to install
+To run Conduit directly from the console:
+```bash
+python -m mconduit
+```
 
-- Complitely indipendent from the server
+Check out our comprehensive [Wiki: How to Install](https://github.com/1attila/Conduit/wiki/How-to-install) for a full step-by-step configuration guide.
 
-- Updates manually
+---
 
-- Server/Handler attributes access from CLI
+## 📚 Documentation
+Everything you need to know about building plugins, configuring the server, and utilizing the API can be found on our [Wiki](https://github.com/1attila/Conduit/wiki).
 
-- Nicer APIs
+## 🗺️ Roadmap
+We are actively developing Conduit. Future updates include:
+- Support for Bukkit / Spigot / Paper / Forge / Fabric log formats.
+- More event hooks and deeper data fetching.
+- Further CLI enhancements.
 
-### Const (worse than MCDR)
-- Still in early development
+## 🤝 Contributing
+Contributions are more than welcome! Whether it's reporting bugs, suggesting features, writing documentation, or creating awesome new plugins.
+- **Discord:** Contact me directly at `attila8829` or join [MultiTech discord](https://discord.gg/uVUnNbVmhh)
+- **Pull Requests:** Feel free to open an issue or PR on this repository!
 
-- Not too many features
-
-- Could be tested better
-
-- Only works on vanilla
-
-- Not well documented
-
-## How to install
-To setup Conduit check the [wiki](https://github.com/1attila/Conduit/wiki), it's easier than you might think!
-
-## Features
-Current features:
-- Rcon
-- Events
-- Commands (kinda)
-- Json text
-- Cli
-- Multilingual
-- Data fetch
-
-
-## Future updates
-- Permissions
-- Commands
-- Plugin system
-- More events
-- More data fetching
-- UIs
-- Even easier to setup
-- Better CLI
-- Add supports for bukkit/spigot/forge, etc
-
-Keep in mind that these updates will not be released in order.
-
-## Credits
-This proejct is heavily inspired by MCDReforged, huge credits to all the [MCDR team](https://github.com/MCDReforged)!!
-
-## Contributions
-If you would like to help in any way (suggest features, report bugs, test beta features, write documentations, write some scripts) you are very welcome!
-Contact me on discord: attila8829
-
-## Documentation
-For any info consult the wiki [here](https://github.com/1attila/Conduit/wiki)
+## 💙 Credits
+This project was heavily inspired by the amazing work done by the [MCDReforged](https://github.com/MCDReforged) team. Huge credits to them for pioneering this space!

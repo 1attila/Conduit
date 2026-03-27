@@ -2,3 +2,7 @@ parse>=1.20.2
 PyYAML>=6.0.1
 rcon>=2.4.6
 pygtail>=0.14.0
+prompt-toolkit>=3.0.52
+requests>=2.32.4
+paramiko
+nbtlib

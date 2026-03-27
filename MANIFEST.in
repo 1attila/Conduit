@@ -1,3 +1,6 @@
 include main.py
 include README.md
 include requirements.txt
+include mconduit/resources/death_messages.json
+include mconduit/resources/player_actions.json
+include mconduit/resources/en_us.yml

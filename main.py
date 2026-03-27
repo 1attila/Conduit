@@ -2,7 +2,7 @@
 Conduit main function
 """
 
-from conduit import build_handler
+from mconduit import build_handler
 
 
 def main():

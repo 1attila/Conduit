@@ -1,0 +1,25 @@
+# =============================
+# Created by 1attla's generator
+# =============================
+
+_11 = "music_disc.11"
+_13 = "music_disc.13"
+_5 = "music_disc.5"
+blocks = "music_disc.blocks"
+cat = "music_disc.cat"
+chirp = "music_disc.chirp"
+creator = "music_disc.creator"
+creator_music_box = "music_disc.creator_music_box"
+far = "music_disc.far"
+lava_chicken = "music_disc.lava_chicken"
+mall = "music_disc.mall"
+mellohi = "music_disc.mellohi"
+otherside = "music_disc.otherside"
+pigstep = "music_disc.pigstep"
+precipice = "music_disc.precipice"
+relic = "music_disc.relic"
+stal = "music_disc.stal"
+strad = "music_disc.strad"
+tears = "music_disc.tears"
+wait = "music_disc.wait"
+ward = "music_disc.ward"
