@@ -1,9 +1,13 @@
 """
-Runs Conduit automatically
+Conduit main function
 """
 
-from conduit import build_handler
+from mconduit import build_handler
+
+
+def main():
+    build_handler()
 
 
 if __name__ == "__main__":
-    build_handler()
+    main()

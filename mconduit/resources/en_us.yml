@@ -1,0 +1,84 @@
+Set: # Cli
+  "Set"
+Language is now set to: # Cli
+  "Language is now set to"
+No server was found in <file_path>: # load_config
+  "No server was found in {0}"
+Do you want conduit to find them for you (Y/N)?: # load_config
+  "Do you want conduit to find them for you (Y/N)?"
+proceed? >:
+  "proceed? > "
+Finding all possible servers, this operation can take some time: # load_config
+  "Finding all possible servers, this operation can take some time"
+Found one at <path> how should be called? (press send to skip): # load_config
+  "Found one at {0} how should be called? (press send to skip)"
+Found all possible servers: # load_config
+  "Found all possible servers"
+Global Configuration (2/2): # prefix_setter
+  "Global Configuration (2/2)"
+Select the command prefix you want to use in Minecraft:: # prefix_setter
+  "Select the command prefix you want to use in Minecraft:"
+Add Server - Finder method: # add_server
+  "Add Server - Finder method"
+Select how you want to add the server: # add_server
+  "Select how you want to add the server"
+Automatic : # add_server
+  "Automatic "
+Scan this machine to find all Minecraft servers: # add_server
+  "Scan this machine to find all Minecraft servers"
+Manual    : # add_server
+  "Manual    "
+Input the directory of the server: # add_server
+  "Input the directory of the server"
+Download  : # add_server
+  "Download  "
+Create a new one: # add_server
+  "Create a new one"
+Add Server - Input path: # add_server
+  "Add Server - Input path"
+Input the directory where the Minecraft server is located:: # add_server
+  "Input the directory where the Minecraft server is located:"
+Add Server - Choose type (1/3): # add_server
+  "Add Server - Choose type (1/3)"
+Select what kind of server you want to download: # add_server
+  "Select what kind of server you want to download"
+Server Download - Choose snapshots (1.1/3): # version_selector
+  "Server Download - Choose snapshots (1.1/3)"
+Do you want to install a snapshot?: # version_selector
+  "Do you want to install a snapshot?"
+Server Download (2/3): # version_selector
+  "Server Download (2/3)"
+Select the version of the server:: # version_selector
+  "Select the version of the server:"
+No version found!: # version_selector
+  "No version found!"
+You must create the server manually!: # version_selector
+  "You must create the server manually!"
+Server Download (3/3):
+  "Server Download (3/3)"
+Select where you want to download the server:
+  "Select where you want to download the server"
+Server download failed!:
+  "Server download failed!"
+Server downloaded sucesfully!:
+  "Server downloaded sucesfully!"
+Do you agree to Minecraft EULA?:
+  "Do you agree to Minecraft EULA?"
+Configure server - basic configs (1/3):
+  "Configure server - basic configs (1/3)"
+name(s):
+  "name(s)"
+start command:
+  "start command"
+lang:
+  "lang"
+modify server.properties:
+  "modify server.properties"
+Configure server - Rcon configs (2/3):
+  "Configure server - Rcon configs (2/3)"
+Problem while starting the server:
+  "Problem while starting the server"
+You didnt accept EULA:
+  "You didnt accept EULA"
+You must accept EULA to run the server!:
+  "You must accept EULA to run the server!"

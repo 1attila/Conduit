@@ -1,0 +1,561 @@
+from typing import Callable, NoReturn, Union, Optional, List, Dict, Any
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit import prompt
+from pathlib import Path
+from threading import Event, RLock
+import subprocess
+import logging
+import json
+import sys
+import os
+
+from .plugins.plugin_catalogue import PluginCatalogue
+from .plugins.plugin_process import ProcessHandler
+from .utils.parallel_task_loop import ParallelTaskLoop
+from .utils.reload_trigger import reload_trigger
+from .utils.getters import get_teams
+from .conduit_config import HandlerConfig
+from .server_runner import ServerRunner
+from .conduit_updater import ConduitUpdater
+from .telemetry import TelemetryTracker
+from .cli import Cli, WelcomeScreen 
+from .context import Context
+from .lang.lang import Lang
+from .server import Server
+from .__version__ import __version__
+from .constants import *
+from . import sound
+
+
+logger = logging.getLogger()
+
+PERM_DICT: Dict[str, List[Callable[[Union["Handler", Server, Context]], Any]]] = {
+    "Guest": [],
+    "User": [],
+    "Helper": [],
+    "Admin": [],
+    "Owner": []
+}
+
+
+class Handler:
+    """
+    Handles all the minecraft server processes
+
+    Contains some utility methods to broadcast between servers
+    """
+
+
+    __config: HandlerConfig
+    __server_runners: List[ServerRunner]
+    __lang: Lang
+    __stop_event: Event
+    __updater: Optional[ConduitUpdater]
+    __cli: Cli
+    __catalogue: PluginCatalogue
+    __process_handler: ProcessHandler
+    __update: bool
+    __parallel_tasks: ParallelTaskLoop
+    __lock: RLock
+    __telemetry: TelemetryTracker
+    _reload_flag: bool # Used in reload_trigger
+
+
+    def __init__(
+        self,
+        config: Optional[HandlerConfig],
+        restart: bool=False,
+        gui: bool=True,
+        update: bool=True
+    ) -> None:
+        
+        self.__telemetry = TelemetryTracker(self)
+
+        if config is None:
+
+            self.__telemetry.on_first_run()
+            config = WelcomeScreen(gui, update, self).run()
+
+            if config is not None:
+                config.save()
+            else:
+                raise RuntimeError("Config not found!")
+        
+        self.__config = config
+        self.__stop_event = Event()
+        self.__server_runners = []
+        self.__update = update
+        self.__lock = RLock()
+        self._reload_flag = False
+
+        if self.__config.collect_telemetry_data is False:
+            self.__telemetry.disable()
+        
+        for server_config in self.__config.servers_config:
+            
+            try:
+                server_runner = ServerRunner(server_config, self.__stop_event, restart, self)
+                self.__server_runners.append(server_runner)
+            
+            except Exception as e:
+                logger.error(f"Unable to create server {server_config.names[0]}, error: {e}")
+        
+        self._try_generate_resources()
+
+        try:
+            self.__lang = Lang(Path.cwd() / "resources", self.__config.default_language)
+
+        except ValueError:
+            raise ValueError(f"Unable to load language: {self.__config.default_language}")
+
+        if self.__update is True:
+            self.__updater = ConduitUpdater(self)
+        else:
+            self.__updater = None
+
+        self.__catalogue = PluginCatalogue(self)
+        self.__process_handler = ProcessHandler(self)
+
+        self.__parallel_tasks = ParallelTaskLoop()
+        
+        if self.__update is True:
+            self.__parallel_tasks.add_task(self.__updater.check_for_updates) # type: ignore
+        
+        self.__parallel_tasks.add_task(reload_trigger, self)
+        self.__parallel_tasks.add_task(self.__catalogue._update_catalogue_cache)
+        self.__parallel_tasks.add_task(self.__process_handler.check_processes)
+        
+        self.__parallel_tasks.start()
+        
+        self.to_all_servers(lambda s: s.plugin_manager.load_all_plugins())
+        self.to_all_servers(lambda s: s._on_conduit_start())
+
+        if restart:
+            self.to_all_servers(lambda s: s.execute('/tellraw @a {"color": "green", "text": "[Conduit]: Reloaded sucesfully!"}'))
+        else:
+            self.to_all_servers(lambda s: s.execute('/tellraw @a {"color": "green", "text": "[Conduit]: Started!"}'))
+        
+        self.to_all_servers(lambda s: s.playsound(sound.block.conduit.activate))
+
+        self.__telemetry.conduit_load(restart)
+
+        self.__cli = Cli(self.__stop_event, self, self.__lang, gui, restart)
+
+        if not self.__cli.has_gui:
+            self.__cli._console_loop_thread() # prompt_toolkit requires to run in the main thread, so we loop it at the very end
+
+    
+    def _try_generate_resources(self) -> None:
+        """
+        Generates and initializes `plugins` dir, `active_plugins.json` and `perms.json` files if they don't exist yet.
+
+        Note that command_cache file is generated by CommandCache directly
+        """
+
+        if not Path(PERMS_FILE).exists():
+
+            with open(PERMS_FILE, "x") as f:
+
+                initial_json = {server.name: PERM_DICT for server in self.servers}
+
+                f.write(json.dumps(initial_json, indent=4))
+
+        if not Path(PLUGINS_DIR).exists():
+            os.mkdir(PLUGINS_DIR)
+        
+        if not Path(ACTIVE_PLUGINS_FILE).exists():
+
+            with open(ACTIVE_PLUGINS_FILE, "x") as f:
+
+                initial_json = {server.name: [] for server in self.servers} # type: ignore
+
+                f.write(json.dumps(initial_json, indent=4))
+
+        self._load_perms()
+
+    
+    def _load_perms(self) -> None:
+        """
+        Loads Conduits perms for every server.
+
+        If they are missing, asks for the user to specify them
+        """
+
+        with open(PERMS_FILE) as f:
+
+            perms = json.load(f)
+            save_perms = False
+
+            for server in self.servers:
+                
+                try:
+                    server_perms = perms[server.name]
+                except KeyError:
+                    server_perms = self._set_server_perms(server, PERM_DICT)
+                    save_perms = True
+                    
+                if (
+                    server_perms.get("Helper", []) == [] and
+                    server_perms.get("Admin", []) == [] and
+                    server_perms.get("Owner", []) == []
+                ):
+                    server_perms = self._set_server_perms(server, server_perms)
+                    save_perms = True
+
+                perms[server.name] = server_perms
+                server._set_perms(server_perms)
+
+        if save_perms is True:
+            
+            with open(PERMS_FILE, "w") as f:
+                json.dump(perms, f, indent=4)
+
+            logger.info("Permissions saved sucesfully")
+        
+
+    def _set_server_perms(
+        self,
+        server: Server,
+        perms: Dict
+    ) -> Dict:
+        """
+        Tries to ask the user to set the perms
+        """
+
+        logger.warning(f"Seems that higher permsissions for {server.name} have not been set yet!")
+        logger.warning("If you want to know more, look a the wiki: https://github.com/1attila/Conduit/wiki")
+        inp = input("It's recomended to set at least permission `Helper` or higher. Do you want to set them now? (Y/N) > ")
+
+        if inp.lower().strip() in ["1", "true", "y", "yes"]:
+            
+            team_completer = None
+            existing_teams = get_teams(server) or []
+            
+            if existing_teams is not None:
+                team_completer = WordCompleter(existing_teams, ignore_case=True)
+
+            logger.info("If you don't want to enter a permission, press ENTER to skip it")
+
+            for name, values in perms.items():
+                
+                if len(values) > 0:
+                    logger.info(f"{server.name} {name} = {values}")
+
+                else:
+                    
+                    if name in ["Owner", "Admin", "Helper"]:
+                        question = "(Recomended) "
+                    else:
+                        question = "(Optional) "
+
+                    question += f"{server.name} {name}: "
+
+                    if team_completer is not None:
+                        i = prompt(message=question, completer=team_completer)
+                    else:
+                        i = prompt(message=question)
+                        
+                    if len(i) > 0:
+
+                        p = perms.get(name, [])
+
+                        for team in i.strip().split(" "):
+
+                            if len(team) > 0:
+                                p.append(team)
+
+                                if team not in existing_teams and server.is_running:
+
+                                    logger.warning(f"Seems that the team `{team}` doesn't exist in-game?")
+                                    team_gen = input("Want to create it automatically? (Y/N) > ") or ""
+
+                                    if team_gen.lower().strip() in ["1", "true", "y", "yes"]:
+
+                                        server.execute(f"""/team add {team}""")
+
+                                        existing_teams = get_teams(server) or []
+            
+                                        if existing_teams is not None:
+                                            team_completer = WordCompleter(existing_teams, ignore_case=True)
+
+                                        logger.info("Team created sucesfully")
+
+        return perms
+                
+    
+    def reload(self) -> None:
+        """
+        Starts a new version of Conduit and swaps the current with the updated one
+        """
+
+        self._reload_flag = True
+
+    
+    def _reload(self) -> NoReturn:
+        """
+        Starts a new version of Conduit and swaps the current with the updated one
+        """
+
+        self.__telemetry.conduit_unload(reload=True)
+
+        args = [sys.executable, "-m", "mconduit", "--restart"]
+
+        if self.cli.has_gui:
+            args.append("--gui")
+
+        if self.__update:
+            args.append("--update")
+
+        self.to_all_servers(lambda s: s.execute('/tellraw @a {"color": "gold", "text": "[Conduit]: Reloading..."}'))
+        self.__stop_event.set()
+        self.to_all_servers(lambda s: s._join_input_thread())
+        self.__cli._stop()
+
+        sys.stdout.flush()
+
+        subprocess.run(args)
+
+        sys.exit()
+
+    
+    @property
+    def _updater(self) -> Optional[ConduitUpdater]:
+        """
+        Handler updater, used to update and send the signal to reload Conduit.
+
+        This should be used only by Cli
+        """
+
+        return self.__updater
+
+
+    @property
+    def lang(self) -> Lang:
+        """
+        Main lang
+        """
+
+        return self.__lang
+    
+
+    def set_lang(self, lang: str):
+        """
+        Sets the main language
+        """
+
+        with self.__lock:
+            
+            self.__lang.set_lang(lang)
+            self.__config.save()
+
+
+    @property
+    def servers(self) -> List[Server]:
+        """
+        All the minecraft servers
+        """
+
+        return [runner.server for runner in self.__server_runners]
+    
+
+    @property
+    def command_prefix(self) -> str:
+        """
+        Servers command prefix
+        """
+
+        return self.__config.command_prefix
+    
+
+    @property
+    def cli(self) -> Cli:
+        """
+        Conduit CLI
+        """
+
+        return self.__cli
+    
+
+    @property
+    def plugin_catalogue(self) -> PluginCatalogue:
+        """
+        Conduit plugin catalogue
+        """
+
+        return self.__catalogue
+    
+
+    @property
+    def async_tasks(self) -> ParallelTaskLoop:
+        """
+        Conduit ParallelTaskLoop
+        """
+
+        return self.__parallel_tasks
+
+    
+    @property
+    def telemetry(self) -> TelemetryTracker:
+        """
+        Conduit telemetry tracker
+        """
+
+        return self.__telemetry
+    
+
+    @property
+    def version(self) -> str:
+        """
+        The current Conduit version
+        """
+
+        return __version__ 
+    
+
+    def _stop(self) -> NoReturn:
+        """
+        Stops the program.
+
+        Should be called only by Cli
+        """
+        
+        self.__telemetry.conduit_unload(reload=False)
+        self.__stop_event.set()
+        sys.exit(0)
+
+    
+    def get_server_named(self, name: str) -> Optional[Server]:
+        """
+        Returns the server that has the given name, if there is one
+        """
+
+        for server in self.servers:
+            if name in server.names:
+                return server
+
+
+    def start_servers(self) -> None:
+        """
+        Starts all the servers
+        """
+
+        self.to_all_servers(lambda s: s.start())
+
+
+    def stop_servers(self) -> None:
+        """
+        Stops all the servers
+        """
+
+        self.to_all_servers(lambda s: s.stop())
+
+
+    def to_all_servers(self, fn: Callable[[Server], Any]) -> None:
+        """
+        Runs the specified lambda for every server.
+
+        lambda must have a parameter wich is the server
+        """
+        
+        for runner in self.__server_runners:
+            fn(runner.server)
+
+    
+    def event(self, fn: Callable[[Union["Handler", Server, Context]], Any]) -> None:
+        """
+        Calls the function every time the event of the function name occours.
+
+        The function must only take a single argument of type Context
+        """
+
+        self.to_all_servers(lambda s: s.event(fn))
+
+    
+    def on_player_join(self, fn: Callable[[Context], Any]) -> None:
+        """
+        Decorator that calls the function every time player joins.
+
+        The function must only take a single argument of type Context
+        """
+        
+        self.to_all_servers(lambda s: s.on_player_join(fn))
+
+
+    def on_player_left(self, fn: Callable[[Context], Any]) -> None:
+        """
+        Decorator that calls the function every time a player left the server.
+
+        The function must only take a single argument of type Context
+        """
+        
+        self.to_all_servers(lambda s: s.on_player_left(fn))
+
+
+    def on_player_death(self, fn: Callable[[Context], Any]) -> None:
+        """
+        Decorator that calls the function every time a player is killed.
+
+        The function must only take a single argument of type Context
+        """
+        
+        self.to_all_servers(lambda s: s.on_player_death(fn))
+
+
+    def on_player_message(self, fn: Callable[[Context], Any]) -> None:
+        """
+        Decorator that calls the function every time a player sends a message.
+
+        The function must only take a single argument of type Context
+        """
+        
+        self.to_all_servers(lambda s: s.on_player_message(fn))
+
+
+    def on_player_command(self, fn: Callable[[Context], Any]) -> None:
+        """
+        Decorator that calls the function every time a player sends a command.
+
+        The function must only take a single argument of type Context
+        """
+        
+        self.to_all_servers(lambda s: s.on_player_command(fn))
+
+
+    def on_conduit_start(self, fn: Callable[["Handler"], Any]) -> None:
+        """
+        Decorator that calls the function every time conduit is started.
+
+        The function must only take a single argument of type Handler
+        """
+
+        self.to_all_servers(lambda s: s.on_conduit_start(fn))
+
+
+    def on_conduit_stop(self, fn: Callable[["Handler"], Any]) -> None:
+        """
+        Decorator that calls the function every time conduit is about to stop.
+
+        The function must only take a single argument of type Handler
+        """
+
+        self.to_all_servers(lambda s: s.on_conduit_stop(fn))
+
+    
+    def on_server_start(self, fn: Callable[[Server], Any]) -> None:
+        """
+        Decorator that calls the function every time a server is started.
+
+        The function must only take a single argument of type Server
+        """
+
+        self.to_all_servers(lambda s: s.on_server_start(fn))
+
+
+    def on_server_stop(self, fn: Callable[[Server], Any]) -> None:
+        """
+        Decorator that calls the function every time a server stops.
+
+        The function must only take a single argument of type Server
+        """
+
+        self.to_all_servers(lambda s: s.on_server_stop(fn))

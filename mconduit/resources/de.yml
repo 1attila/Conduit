@@ -1,0 +1,78 @@
+Set:
+  "Gesetzt"
+Language is now set to:
+  "Die Sprache wurde gesetzt auf"
+No server was found in <file_path>:
+  "Kein Server in {0} gefunden"
+Do you want conduit to find them for you (Y/N)?:
+  "Möchtest du, dass conduit sie für dich sucht (Y/N)?"
+proceed? >:
+  "fortfahren? > "
+Finding all possible servers, this operation can take some time:
+  "Suche nach allen möglichen Servern, dieser Vorgang kann einige Zeit dauern"
+Found one at <path> how should be called? (press send to skip):
+  "Einen Server in {0} gefunden, wie soll er heißen? (Enter zum Überspringen)"
+Found all possible servers:
+  "Alle möglichen Server wurden gefunden"
+Global Configuration (2/2):
+  "Globale Konfiguration (2/2)"
+Select the command prefix you want to use in Minecraft::
+  "Wähle das Befehlspräfix für Minecraft:"
+Add Server - Finder method:
+  "Server hinzufügen - Suchmethode"
+Select how you want to add the server:
+  "Wähle, wie du den Server hinzufügen möchtest"
+Automatic :
+  "Automatisch "
+Scan this machine to find all Minecraft servers:
+  "Diese Maschine nach Minecraft-Servern durchsuchen"
+Manual    :
+  "Manuell    "
+Input the directory of the server:
+  "Gib das Serververzeichnis ein"
+Download  :
+  "Herunterladen "
+Create a new one:
+  "Einen neuen erstellen"
+Add Server - Input path:
+  "Server hinzufügen - Pfad eingeben"
+Input the directory where the Minecraft server is located::
+  "Gib das Verzeichnis des Minecraft-Servers ein:"
+Add Server - Choose type (1/3):
+  "Server hinzufügen - Typ auswählen (1/3)"
+Select what kind of server you want to download:
+  "Wähle den Servertyp, den du herunterladen möchtest"
+Server Download - Choose snapshots (1.1/3):
+  "Server-Download - Snapshots auswählen (1.1/3)"
+Do you want to install a snapshot?:
+  "Möchtest du einen Snapshot installieren?"
+Server Download (2/3):
+  "Server-Download (2/3)"
+Select the version of the server::
+  "Wähle die Serverversion:"
+No version found!:
+  "Keine Version gefunden!"
+You must create the server manually!:
+  "Du musst den Server manuell erstellen!"
+Server Download (3/3):
+  "Server-Download (3/3)"
+Select where you want to download the server:
+  "Wähle, wo der Server heruntergeladen werden soll"
+Server download failed!:
+  "Server-Download fehlgeschlagen!"
+Server downloaded succesfully!:
+  "Server erfolgreich heruntergeladen!"
+Do you agree to Minecraft EULA?:
+  "Akzeptierst du die Minecraft-EULA?"
+Configure server - basic configs (1/3):
+  "Server konfigurieren - Grundeinstellungen (1/3)"
+name(s):
+  "Name(n)"
+start command:
+  "Startbefehl"
+lang:
+  "Sprache"
+modify server.properties:
+  "server.properties bearbeiten"
+Configure server - Rcon configs (2/3):
+  "Server konfigurieren - Rcon-Einstellungen (2/3)"

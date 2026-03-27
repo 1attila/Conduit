@@ -70,93 +70,12 @@ This prevents server crashes if something fails and makes it reloadable at runti
 Another important difference is that Conduit allows managing multiple servers from a single instance.
 
 ### The Conduit Architecture
-```mermaid
-flowchart LR
-    %% Colors and Styles
-    classDef user fill:#f9a826,stroke:#333,stroke-width:2px,color:#000;
-    classDef conduit fill:#2196f3,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef plugin fill:#ffca28,stroke:#333,stroke-width:2px,color:#000;
-    classDef mc fill:#4caf50,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef log fill:#607d8b,stroke:#fff,stroke-width:1px,color:#fff;
 
-    U([👤 User]):::user
-
-    subgraph ConduitSystem["Conduit Framework (Single Process)"]
-        direction TB
-
-        Handler(⚙️ Handler):::conduit
-        Plug([🧩 Plugins]):::plugin
-
-        Plug <--> Handler
-    end    
-
-    %% Servers
-    subgraph S1["Survival Server"]
-        direction TB
-
-        MC1(Minecraft):::mc
-        L1(📄 latest.log):::log
-        MC1 --> L1
-    end
-
-    subgraph S2 ["Creative Server"]
-        direction TB
-
-        MC2(Minecraft):::mc
-        L2(📄 latest.log):::log
-        MC2 --> L2
-    end
-
-    %% User Interaction
-    U <-.->|💻 CLI| Handler
-
-    %% Connections
-
-    Handler <-.->|🛜 Rcon| MC1
-    Handler <--->|📜 Pygtail| L1
-    
-    Handler <-.->|🛜 Rcon| MC2
-    Handler <--->|📜 Pygtail| L2
-```
+![Conduit architecture](https://github.com/1attila/Conduit/blob/main/assets/conduit_architecture.png?raw=true)
 
 This instead is a simplified scheme of how **MCDR** works:
 
-```mermaid
-flowchart LR
-    %% Colors and Styles
-    classDef user fill:#f9a826,stroke:#333,stroke-width:2px,color:#000;
-    classDef mcdr fill:#2196f3,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef plugin fill:#ffca28,stroke:#333,stroke-width:2px,color:#000;
-    classDef mc fill:#4caf50,stroke:#fff,stroke-width:2px,color:#fff;
-
-    U([👤 User]):::user
-
-    subgraph Env1["Survival Environment"]
-        direction TB
-
-        M1(⚙️ MCDR):::mcdr
-        P1([🧩 Plugins]):::plugin
-        S1(Minecraft):::mc
-        
-        M1 <--> P1
-        M1 <-->|Stdio| S1
-    end
-
-    subgraph Env2 ["Creative Environment"]
-        direction TB
-
-        M2(⚙️ MCDR):::mcdr
-        P2([🧩 Plugins]):::plugin
-        S2(Minecraft):::mc
-        
-        M2 <--> P2
-        M2 <-->|Stdio| S2
-    end
-
-    %% User Interaction
-    U <-.->|💻 CLI| M1
-    U <-.->|💻 CLI| M2
-```
+![MCDR architecture](https://github.com/1attila/Conduit/blob/main/assets/mcdr_architecture.png?raw=true)
 
 ### Why choose Conduit?
 

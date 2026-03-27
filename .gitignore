@@ -1,0 +1,30 @@
+# vscode
+.vscode/
+
+# python stuffs
+__pycache__/
+.venv/
+.mypy_cache/
+.ruff_cache/
+*.pyc
+
+# pypi
+/build/
+/dist/
+*.egg-info/
+
+# env
+/venv/
+
+# Conduit
+active_plugins.json
+command_cache.json
+config.json
+perms.json
+/plugins
+/resources
+/telemetry
+/logo
+/mconduit-resource-pack-release
+/.mconduit-resource-pack-dev
+*.zip
