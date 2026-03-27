@@ -71,11 +71,11 @@ Another important difference is that Conduit allows managing multiple servers fr
 
 ### The Conduit Architecture
 
-[!Conduit architecture](https://github.com/1attila/Conduit/blob/main/assets/conduit_architecture.png?raw=true)
+![Conduit architecture](https://github.com/1attila/Conduit/blob/main/assets/conduit_architecture.png?raw=true)
 
 This instead is a simplified scheme of how **MCDR** works:
 
-[!MCDR architecture](https://github.com/1attila/Conduit/blob/main/assets/mcdr_architecture.png?raw=true)
+![MCDR architecture](https://github.com/1attila/Conduit/blob/main/assets/mcdr_architecture.png?raw=true)
 
 ### Why choose Conduit?
 

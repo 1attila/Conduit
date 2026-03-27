@@ -1,7 +1,11 @@
+# vscode
+.vscode/
+
 # python stuffs
 __pycache__/
 .venv/
 .mypy_cache/
+.ruff_cache/
 *.pyc
 
 # pypi
