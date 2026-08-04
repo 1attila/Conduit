@@ -250,5 +250,20 @@ CHANGELOGS = {
         "removed": [
             "PluginCatalogue.skipped_updates"
         ]
+    },
+    "0.5.0": {
+        "release_date": "",
+        "added": [
+
+        ],
+        "modified": [
+
+        ],
+        "fixed": [
+
+        ],
+        "removed": [
+            
+        ]
     }
 }
