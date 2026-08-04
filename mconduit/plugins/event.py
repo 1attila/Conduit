@@ -1,13 +1,10 @@
-from typing import Callable, Union, Optional, Any, TYPE_CHECKING
+from __future__ import annotations
+from typing import Callable, Optional, Any, overload, TYPE_CHECKING
+
+from mconduit.event import Event
 
 if TYPE_CHECKING:
-    from ..event import Event
-    from ..context import Context
-    from ..server import Server
-    from ..handler import Handler
-
-
-EventFunc = Callable[[Union["Context", "Handler", "Server", str]], Any]
+    from mconduit._types import EventFunc
 
 
 class EventListener:
@@ -15,49 +12,80 @@ class EventListener:
     Internal class used to register events
     """
     
-    _callback: Callable
-    _event: "Event"
+    _callback: EventFunc
+    _event: Event
+
 
     def __init__(
         self,
         callback: EventFunc,
-        event: Optional[str]=None
+        event: Optional[Event] = None
     ) -> None:
 
         self._callback = callback
-        self._event = event
+
+        if event is None:
+            self._event = {
+                "on_player_join":    Event.PLAYER_JOIN,
+                "on_player_left":    Event.PLAYER_LEFT,
+                "on_player_death":   Event.PLAYER_DEATH,
+                "on_player_message": Event.PLAYER_CHAT,
+                "on_player_command": Event.PLAYER_COMMAND,
+                "on_server_start":   Event.SERVER_START,
+                "on_server_stop":    Event.SERVER_STOP
+            }[callback.__name__]
+        
+        else:
+            self._event = event
     
 
-def event(event: "Event") -> Callable:
+@overload
+def event(event: Event,  /) -> Callable:
     ...
 
-def event(fn: EventFunc) -> EventListener:
+
+@overload
+def event(fn: EventFunc, /) -> EventListener:
     ...
+
+
+@overload
+def event(*, event: Event) -> Callable:
+    ...
+
 
 def event(
-    fn: Optional[EventFunc]=None,
-    event: Optional["Event"]=None
-) -> Union[EventListener, Callable]:
+    fn_or_event: Any = None,
+    *,
+    event: Any = None
+) -> Any:
     """
     A decorator that links the function to the given event (or the event named as the function if not provided)
 
-    Examples:
+    Examples::
 
-    ```
-    @plugins.event
-    def on_player_command(self, ctx: Context):
-        ...
+        @plugins.event
+        def on_player_command(self, ctx: Context):
+            ...
 
-    @plugins.event(event=Event.PlayerJoin)
-    def greet(self, ctx: Context):
-        ctx.reply(f"Hello {player}!")
-    ```
+        @plugins.event(Event.PLAYER_JOIN)
+        def greet(self, ctx: Context):
+            ctx.reply(f"Hello {player}!")
     """
 
-    def decorator(fn: Callable) -> EventListener:
-        return EventListener(fn, event)
+    def decorator(fn: EventFunc) -> EventListener:
 
-    if fn:
-        return EventListener(fn, event)
-    else:
+        assert isinstance(fn_or_event, Event)
+        return EventListener(fn, fn_or_event)
+
+    if fn_or_event is not None and isinstance(fn_or_event, Event):
         return decorator
+
+    if event is not None:
+        fn_or_event = event
+        return decorator
+
+    if fn_or_event is not None and callable(fn_or_event):
+        return EventListener(fn_or_event)
+
+    return decorator

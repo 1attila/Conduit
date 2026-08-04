@@ -1,7 +1,7 @@
 from typing import Tuple, Union, Optional
 from math import sqrt
 
-import parse
+import parse # type: ignore[import-untyped]
 
 
 class Vec3d:
@@ -84,7 +84,7 @@ class Vec3d:
         )
     
 
-    def __mul__(self, value: Union["Vec3d", float]) -> "Vec3d":
+    def __mul__(self, value: Union["Vec3d", float, int]) -> "Vec3d":
 
         if isinstance(value, Vec3d):
 
@@ -99,9 +99,13 @@ class Vec3d:
             self.y * value,
             self.z * value
         )
+
+    
+    def __rmul__(self, value: Union[float, int]) -> "Vec3d":
+        return self.__mul__(value)
     
 
-    def __truediv__(self, value: Union["Vec3d", float]) -> "Vec3d":
+    def __truediv__(self, value: Union["Vec3d", float, int]) -> "Vec3d":
 
         if isinstance(value, Vec3d):
             
@@ -187,7 +191,7 @@ class Vec3d:
     
     
     def __repr__(self) -> str:
-        return f"Vec3d x:{self.x}, y:{self.y}, z:{self.z}"
+        return f"Vec3d({self.x}, {self.y}, {self.z})"
 
     
     def __copy__(self) -> "Vec3d":

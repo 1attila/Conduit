@@ -72,3 +72,5 @@ class Mob(Entity):
 
         if x and y and z:
             return Vec3d(x, y, z)
+
+        return None

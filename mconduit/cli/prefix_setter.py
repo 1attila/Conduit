@@ -1,8 +1,8 @@
 from prompt_toolkit.shortcuts import input_dialog
 
-from .error_dialog import ErrorDialog
-from ..lang import Lang
-from .styles import *
+from mconduit.cli.error_dialog import ErrorDialog
+from mconduit.cli.styles import *
+from mconduit.lang import Lang
 
 
 class PrefixSetter:
@@ -28,10 +28,11 @@ class PrefixSetter:
             style=welcome_style
         ).run()
 
-        if prefix is None:
+        if prefix is None or len(prefix.strip()) == 0:
             ErrorDialog(
-
+                "Invalid command prefix",
+                "It must be a non-space character"
             ).run()
             raise
 
-        return prefix
+        return prefix.strip()

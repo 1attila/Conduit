@@ -1,25 +1,27 @@
-from typing import Optional, Union, Callable, List, Dict, Any, TYPE_CHECKING
+from __future__ import annotations
+from typing import Optional, Callable, List, Dict, Any, TYPE_CHECKING
 from pathlib import Path
-import threading
-import copy
+import traceback
+import parse # type: ignore[import-untyped]
 
-from .server_api import ServerAPI
-from .event_handler import EventHandler
-from .utils.rcon import Rcon, AllAtOnce
-from .utils.version_fetcher import VersionFetcher
-from .utils.check_annotation import check_annotation
-from .text._text_handler import TextHandler
-from .resource_pack import ResourcePack
-from .lang.lang import Lang
-from .plugin_manager import PluginManager
-from .event import Event
-from .context import Context
+from mconduit.server_api import ServerAPI
+from mconduit.event_handler import EventHandler
+from mconduit.utils.version import Version
+from mconduit.utils.version_fetcher import VersionFetcher
+from mconduit.utils.check_annotation import check_annotation
+from mconduit.perms.manager import PermissionManager
+from mconduit.resource_pack import ResourcePack
+from mconduit.lang.lang import Lang
+from mconduit.plugin_manager import PluginManager
+from mconduit.event import Event, SERVER_EVENTS
+from mconduit.context import Context
+from mconduit._types import Player
+
+from mconduit._types import EventFunc
 
 if TYPE_CHECKING:
-    from .server_runner import ServerRunner
-    from .conduit_config import ServerRunnerConfig
-    from .handler import Handler
-    from .plugins.perms import Permission
+    from mconduit.server_runner import ServerRunner
+    from mconduit.handler import Handler
 
 
 class Server(ServerAPI):
@@ -29,136 +31,82 @@ class Server(ServerAPI):
     Contains all the fetching and Rcon API and some useful attributes 
     """
 
-    __names: List[str]
-    __path: Path
-    __rcon: Rcon
-    __runner: "ServerRunner"
-    __config: "ServerRunnerConfig"
-    __event_handler: EventHandler
-    __lang: "Lang"
-    __slots: Dict[Event, List[Callable[[Any], Any]]]
-    __lock: threading.RLock
-    __plugin_manager: PluginManager
-    __perms: Dict["Permission", List[str]]
-    __is_running: bool
-    __is_v1_21_5: bool
-    __text_handler: "TextHandler"
-    __resource_pack: ResourcePack
+
+    _event_handler: EventHandler
+    _slots: Dict[Event, List[EventFunc]]
+    _plugin_manager: PluginManager
+    _perm_manager: PermissionManager
+    _is_running: bool
+    _is_v1_21_5: bool
+    _lang: Lang
+    _resource_pack: ResourcePack
+    _version: Optional[Version]
 
 
-    def __init__(self, runner: "ServerRunner") -> None:
+    def __init__(
+        self,
+        runner: ServerRunner
+    ) -> None:
+
+        super().__init__(runner)
 
         config = runner.config
-        self.__runner = runner
-        self.__config = config
-        self.__path = config.path
-        self.__names = config.names
 
-        self.__slots = {event: [] for event in [
-            Event.PlayerJoin, 
-            Event.PlayerLeft,
-            Event.PlayerDeath,
-            Event.PlayerChat,
-            Event.PlayerCommand,
-            Event.ServerStart,
-            Event.ServerStop,
-            Event.ConduitStart,
-            Event.ConduitStop
-        ]}
+        self._slots = {event: [] for event in Event}
 
-        def on_start(self: "Server"):
-            self.__is_running = True
+        self._version = None
+        self._perm_manager = PermissionManager(self)
+
+        def on_start(self: Server):
+
+            self._is_running = True
             self.execute("/gamerule sendCommandFeedback false")
-            self.__is_v1_21_5 = VersionFetcher.is_v1_21_5(self)
+            self._is_v1_21_5 = VersionFetcher.is_v1_21_5(self)
             self.execute("/scoreboard objectives add mconduit-sneak minecraft.custom:minecraft.sneak_time")
-            self.__text_handler.reset()
-            self.__resource_pack._serve()
-        
-        def on_stop(self: "Server"):
-            self.__is_running = False
-            self.__resource_pack._stop_and_update()
+            self.execute("save-off")
+            
+            version = VersionFetcher.check_version(self)
 
-        self.__slots[Event.ServerStart].append(on_start)
-        self.__slots[Event.ServerStop].append(on_stop)
+            if version is not None:
+                self._version = Version.from_string(version)
+            
+            self._text_handler.reset()
+            self._resource_pack._serve()
+
+            self._players = {player.name: player for player in self.fetch_online_players()}
         
-        self.__lock = threading.RLock()
-        self.__event_handler = EventHandler(self)
-        self.__lang = Lang(Path.cwd() / "resources", config.language) # NOTE: This may raise
+        def on_stop(self: Server):
+            self._is_running = False
+            self._resource_pack._stop_and_update()
+
+        self._slots[Event.SERVER_START].append(on_start)
+        self._slots[Event.SERVER_STOP].append(on_stop)
+        self._slots[Event.PLAYER_JOIN].append(lambda c: self._players.setdefault(c.player.name, c.player))
+        self._slots[Event.PLAYER_LEFT].append(lambda c: self._players.pop(c.player.name))
         
-        self.__rcon = Rcon(
-            config.rcon_config.address,
-            config.rcon_config.port,
-            config.rcon_config.password
+        self._event_handler = EventHandler(self)
+
+        self._slots[Event.GAME_SAVED].append(
+            lambda s: (
+                self._world_snapshot.sync_world_copy(), # type: ignore
+                self._world_reader.clear_cache(),       # type: ignore
+                self._scoreboard_reader.clear_cache()   # type: ignore
+            )
         )
 
-        super().init(self.__config, self.__rcon) # ServerDataFetchAPI
-        
-        self.__is_running = self.seed is not None
-        self.__is_v1_21_5 = False # PlaceHolder
-        self.__text_handler = TextHandler(self)
+        self.handler.parallel_tasks.add_task(self._world_snapshot.tick_save)
+        self._is_running = self.seed is not None
+        self._is_v1_21_5 = False # PlaceHolder
 
-        self.__resource_pack = ResourcePack(self)
+        self._lang = Lang(Path.cwd() / "resources", config.language) # NOTE: This may raise
+        self._resource_pack = ResourcePack(self)
 
-        if self.__is_running:
+        if self._is_running:
             on_start(self)
         else:
-            self.__resource_pack._stop_and_update()
+            self._resource_pack._stop_and_update()
         
-        self.__plugin_manager = PluginManager(self)
-        self.__perms = {}
-
-
-    def __repr__(self) -> str:
-        return self.__names[0]
-
-    
-    @property
-    def name(self) -> str:
-        """
-        Server main name
-        """
-
-        return self.__names[0]
-    
-
-    @property
-    def names(self) -> List[str]:
-        """
-        All servers names
-        """
-
-        return self.__names
-    
-
-    @property
-    def path(self) -> Path:
-        """
-        Server folder path
-        """
-
-        return self.__path
-    
-
-    @property
-    def handler(self) -> "Handler":
-        """
-        Servers handler
-        """
-
-        return self.__runner.handler
-    
-
-    @property
-    def config(self) -> "ServerRunnerConfig":
-        """
-        Copy of Servers config, Rcon and Machine configs are None for security reasons
-        """
-        
-        config = copy.deepcopy(self.__config)
-        config.rcon_config = None # type: ignore
-        config.machine_config = None # type: ignore
-
-        return config
+        self._plugin_manager = PluginManager(self)
     
 
     @property
@@ -167,7 +115,7 @@ class Server(ServerAPI):
         Server event handler
         """
 
-        return self.__event_handler
+        return self._event_handler
 
 
     @property
@@ -176,56 +124,25 @@ class Server(ServerAPI):
         Server plugin manager
         """
 
-        return self.__plugin_manager
+        return self._plugin_manager
 
     
     @property
-    def permissions(self) -> Dict["Permission", List[str]]:
+    def permissions(self) -> Dict[str, List[str]]:
         """
-        Server permission -> teams mapping
+        Permission -> players
         """
 
-        return self.__perms
-
+        return self._perm_manager.perms
     
-    def _set_perms(self, perms: Dict["Permission", List[str]]) -> None:
-        """
-        Sets server permissions.
-
-        This function should be called ONLY by `Handler`
-        """
-
-        with self.__lock:
-
-            self.__perms[4] = perms["Owner"]
-            self.__perms[3] = perms["Admin"]
-            self.__perms[2] = perms["Helper"]
-            self.__perms[1] = perms["User"]
-            self.__perms[0] = perms["Guest"]
-            
 
     @property
-    def lang(self) -> "Lang":
+    def permission_manager(self) -> PermissionManager:
         """
-        Server language
+        Server permission manager
         """
 
-        return self.__lang
-    
-
-    def set_lang(self, lang: str) -> None:
-        """
-        Sets the main language to the server and all it's plugins.
-
-        Updates configs aswell
-        """
-        
-        with self.__lock:
-        
-            if self.__lang.set_lang(lang):
-
-                self.__runner.handler.__config.save()
-                self.__plugin_manager.set_lang(lang)
+        return self._perm_manager
 
 
     @property
@@ -234,33 +151,16 @@ class Server(ServerAPI):
         True if the Minecraft server is running with Rcon enabled, False otherwise
         """
 
-        with self.__lock:
+        with self._lock:
             
-            self.__is_running = self.seed is not None
+            self._is_running = self.seed is not None
 
-            return self.__is_running
+            return self._is_running
 
 
     @property
-    def slots(self) -> Dict[Event, List[Callable[[Union["Handler", "Server", Context]], Any]]]:
-        return self.__slots
-    
-    
-    def start(self) -> None:
-        """
-        Starts the server
-        """
-
-        raise NotImplementedError
-        self.__runner.start()
-
-
-    def stop(self) -> None:
-        """
-        Stops the server process
-        """
-
-        self.__runner.stop()
+    def slots(self) -> Dict[Event, List[EventFunc]]:
+        return dict(self._slots)
 
 
     @property
@@ -275,6 +175,8 @@ class Server(ServerAPI):
 
             res = res[7:-2]
             return int(res) # type: ignore
+        
+        return None
 
 
     @property
@@ -285,18 +187,7 @@ class Server(ServerAPI):
         This exists mainly due to debug purposes, since Json Text has changed since 1.21.5+
         """
 
-        return self.__is_v1_21_5
-    
-
-    @property
-    def _text_handler(self) -> TextHandler:
-        """
-        Responsible to bind the text click and execute their callbacks.
-
-        This should be accessed only by EventHandler.__call__()
-        """
-
-        return self.__text_handler
+        return self._is_v1_21_5
     
 
     @property
@@ -309,42 +200,87 @@ class Server(ServerAPI):
         Note: To apply changes you must restart the server!
         """
 
-        return self.__resource_pack
-        
+        return self._resource_pack
 
-    def read_file(self, relative_path: str) -> Optional[str]:
+
+    @property
+    def version(self) -> Optional[Version]:
         """
-        Returns the content of the given file.
-
-        This should be used ONLY if the file is located to the server machine (like server.properties)
+        Minecraft server version, if avaiable
         """
-        
-        return self.__runner._read_file(relative_path)
 
+        return self._version
+
+
+    @property
+    def lang(self) -> Lang:
+        """
+        Server language
+        """
+
+        return self._lang
     
-    def write_file(self, relative_path: str, content: Union[str, bytes]) -> None:
-        """
-        Writes the given file with the specified content.
 
-        This should be used ONLY if the file is located to the server machine (like server.properties)
+    def set_lang(self, lang: str) -> bool:
+        """
+        Sets the main language to the server and all it's plugins.
+
+        Updates configs aswell
         """
         
-        self.__runner._write_file(relative_path, content)
+        with self._lock:
+        
+            if self._lang.set_lang(lang):
+
+                self._runner.handler._config.save()
+                self._plugin_manager.set_lang(lang)
+
+                return True
+
+        return False
 
 
-    def all_at_once(self) -> AllAtOnce:
+    def fetch_online_players(self) -> List[Player]:
         """
-        Builds a ContextManager that executes all the commands that have been called in it's context at the end
+        Retrieves all the players online with Rcon.
+
+        Note: use `online_players` attribute if you want to get a list of all the online players.
+
+        Heavily inspired from https://github.com/TISUnion/ChatBridge/blob/master/chatbridge/impl/online/entry.py
         """
 
-        with self.__lock:
-            return self.__rcon.all_at_once()
+        formatters = (
+            r"There are {amount:d} of a max {limit:d} players online:{players}",  # <1.16
+            r"There are {amount:d} of a max of {limit:d} players online:{players}",  # >=1.16
+        )
+
+        response = self.execute("/list")
+
+        for formatter in formatters:
+            parsed_response = parse.parse(formatter, response)
+
+            if parsed_response is not None and parsed_response["players"].startswith(" "):
+                                
+                players = parsed_response["players"][1:]
+
+                if len(players) > 0:
+
+                    player_list = players.split(", ")
+                    
+                    return [Player(name, self) for name in player_list]
+
+        return []
+
+
+    def get_permissions_for(self, player_name: str) -> List[str]:
+
+        return self.permission_manager.get_player_perms(player_name)
 
     
     def _add_event_fallback(
         self,
         event: Event,
-        fallback: Callable[[Union[Context, "Server", "Handler"]], Any]
+        fallback: EventFunc
     ) -> None:
         """
         Adds the given fallback to the specified event name.
@@ -352,11 +288,11 @@ class Server(ServerAPI):
         This function exist only to be called by the Plugin to link it's events
         """
 
-        with self.__lock:
-            self.__slots.setdefault(event, []).append(fallback)
+        with self._lock:
+            self._slots.setdefault(event, []).append(fallback)
     
 
-    def event(self, fn: Callable[[Union[Context, "Server", "Handler"]], Any]) -> None:
+    def event(self, fn: EventFunc) -> None:
         """
         Calls the function every time the event of the function name occours.
 
@@ -365,19 +301,19 @@ class Server(ServerAPI):
         
         match fn.__name__:
             case "on_player_join":
-                self.on_player_join(fn)
+                self.on_player_join(fn) # type: ignore
             case "on_player_left":
-                self.on_player_left(fn)
+                self.on_player_left(fn) # type: ignore
             case "on_player_death":
-                self.on_player_death(fn)
+                self.on_player_death(fn) # type: ignore
             case "on_player_message":
-                self.on_player_message(fn)
+                self.on_player_message(fn) # type: ignore
             case "on_player_command":
-                self.on_player_command(fn)
+                self.on_player_command(fn) # type: ignore
             case "on_server_start":
-                self.on_server_start(fn)
+                self.on_server_start(fn) # type: ignore
             case "on_server_stop":
-                self.on_server_stop(fn)
+                self.on_server_stop(fn) # type: ignore
             case _:
                 raise Exception("The function name doesn't match any event name!")
 
@@ -390,7 +326,7 @@ class Server(ServerAPI):
         """
         
         if check_annotation(fn, Context):
-            self.__slots[Event.PlayerJoin].append(fn)
+            self._slots[Event.PLAYER_JOIN].append(fn)
 
 
     def on_player_left(self, fn: Callable[[Context], Any]) -> None:
@@ -401,7 +337,7 @@ class Server(ServerAPI):
         """
         
         if check_annotation(fn, Context):
-            self.__slots[Event.PlayerLeft].append(fn)
+            self._slots[Event.PLAYER_LEFT].append(fn)
 
 
     def on_player_death(self, fn: Callable[[Context], Any]) -> None:
@@ -412,7 +348,7 @@ class Server(ServerAPI):
         """
         
         if check_annotation(fn, Context):
-            self.__slots[Event.PlayerDeath].append(fn)
+            self._slots[Event.PLAYER_DEATH].append(fn)
 
 
     def on_player_message(self, fn: Callable[[Context], Any]) -> None:
@@ -423,7 +359,7 @@ class Server(ServerAPI):
         """
         
         if check_annotation(fn, Context):
-            self.__slots[Event.PlayerChat].append(fn)
+            self._slots[Event.PLAYER_CHAT].append(fn)
 
 
     def on_player_command(self, fn: Callable[[Context], Any]) -> None:
@@ -434,10 +370,10 @@ class Server(ServerAPI):
         """
         
         if check_annotation(fn, Context):
-            self.__slots[Event.PlayerCommand].append(fn)
+            self._slots[Event.PLAYER_COMMAND].append(fn)
 
     
-    def on_conduit_start(self, fn: Callable[["Handler"], Any]) -> None:
+    def on_conduit_start(self, fn: Callable[[Handler], Any]) -> None:
         """
         Decorator that calls the function every time conduit is started.
 
@@ -445,10 +381,10 @@ class Server(ServerAPI):
         """
 
         if check_annotation(fn, "Handler"):
-            self.__slots[Event.ConduitStart].append(fn)
+            self._slots[Event.CONDUIT_START].append(fn)
 
 
-    def on_conduit_stop(self, fn: Callable[["Handler"], Any]) -> None:
+    def on_conduit_stop(self, fn: Callable[[Handler], Any]) -> None:
         """
         Decorator that calls the function every time conduit is about to stop.
 
@@ -456,10 +392,10 @@ class Server(ServerAPI):
         """
 
         if check_annotation(fn, "Handler"):
-            self.__slots[Event.ConduitStop].append(fn)
+            self._slots[Event.CONDUIT_STOP].append(fn)
 
     
-    def on_server_start(self, fn: Callable[["Server"], Any]) -> None:
+    def on_server_start(self, fn: Callable[[Server], Any]) -> None:
         """
         Decorator that calls the function every time a server is started.
 
@@ -467,10 +403,10 @@ class Server(ServerAPI):
         """
 
         if check_annotation(fn, Server):
-            self.__slots[Event.ServerStart].append(fn)
+            self._slots[Event.SERVER_START].append(fn)
 
 
-    def on_server_stop(self, fn: Callable[["Server"], Any]) -> None:
+    def on_server_stop(self, fn: Callable[[Server], Any]) -> None:
         """
         Decorator that calls the function every time a server stops.
 
@@ -478,24 +414,7 @@ class Server(ServerAPI):
         """
 
         if check_annotation(fn, Server):
-            self.__slots[Event.ServerStop].append(fn)
-
-    
-    def execute(self, command: Union[List[str], str]) -> Optional[Union[List[str], str]]:
-        """
-        Executes a command with Rcon
-        """
-
-        with self.__lock:
-            return self.__rcon(command)
-        
-
-    def __call__(self, command: Union[List[str], str]) -> Optional[Union[List[str], str]]:
-        """
-        execute() alis, executes a command with Rcon
-        """
-
-        return self.execute(command)
+            self._slots[Event.SERVER_STOP].append(fn)
 
     
     def _on_player_event(self, ctx: Context) -> None:
@@ -503,17 +422,17 @@ class Server(ServerAPI):
         Dispatches player events and calls them
         """
 
-        for fn in self.__slots[ctx.event_type]:
+        for fn in self._slots[ctx.event_type]:
 
             try:
-                if ctx.event_type in [Event.ServerStart, Event.ServerStop]:
+                if ctx.event_type in SERVER_EVENTS:
                     fn(ctx.server) # type: ignore
                 else:
                     # NOTE: Conduit events are not sent here
                     # this method is called only by event_handler which recieves only logs events
-                    fn(ctx)
+                    fn(ctx) # type: ignore
             except:
-                pass
+                traceback.print_exc()
 
     
     def _on_conduit_start(self) -> None:
@@ -521,8 +440,8 @@ class Server(ServerAPI):
         Handles ConduitStart event
         """
 
-        for fn in self.__slots[Event.ConduitStart]:
-            fn(self.handler)
+        for fn in self._slots[Event.CONDUIT_START]:
+            fn(self.handler) # type: ignore
 
 
     def _join_input_thread(self) -> None:
@@ -530,11 +449,11 @@ class Server(ServerAPI):
         Joins the server input loop thread
         """
 
-        for fn in self.__slots[Event.ConduitStop]:
-            fn(self.handler)
+        for fn in self._slots[Event.CONDUIT_STOP]:
+            fn(self.handler) # type: ignore
 
-        self.__runner.stop()
-        self.__text_handler.reset()
+        self._runner.stop()
+        self._text_handler.reset()
 
     
     def on_player_rigth_click(self): ...

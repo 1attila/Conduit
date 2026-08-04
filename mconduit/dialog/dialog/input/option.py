@@ -16,8 +16,8 @@ class Option(Serializable):
         self,
         id: str,
         display: Option[Text],
-        initial: bool=False
-    ) -> "Option":
+        initial: bool = False
+    ) -> None:
         
         self.id = id
         self.display = display

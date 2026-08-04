@@ -8,9 +8,9 @@ import yaml
 import re
 import os
 
-from ..constants import CONDUIT_PATH
+from mconduit.constants import CONDUIT_PATH
 
-DEFAULT_PATTNERS = [
+DEFAULT_PATTERNS = [
     re.compile(r'(?<!\w)self\.lang\["([^"]+)"\]'),
     re.compile(r'(?<!\w)l\["([^"]+)"\]')
 ]
@@ -22,12 +22,12 @@ class LangSyncer:
         self,
         langs_directory: Path = CONDUIT_PATH / "resources",
         code_directory: Path = CONDUIT_PATH,
-        parser_regexes: List[re.Pattern] = DEFAULT_PATTNERS,
+        parser_regexes: List[re.Pattern] = DEFAULT_PATTERNS,
         default_lang: str = "en_us"
     ) -> None:
 
-        self.langs_directory = langs_directory
-        self.code_directory = code_directory
+        self.langs_directory = Path(langs_directory)
+        self.code_directory = Path(code_directory)
         self.patterns = parser_regexes
         self.default_lang = default_lang
 
@@ -62,26 +62,44 @@ class LangSyncer:
     def _fix_translation_file(
         self,
         lang_filename: str,
-        entries: List[str]
+        entries: List[str],
+        update_file: bool = True
     ) -> None:
         
-        with open(lang_filename) as f:
-            lang = yaml.safe_load(f)
+        try:
+            with open(lang_filename, encoding="utf-8") as f:
+                lang = yaml.safe_load(f) or {}
+
+        except FileNotFoundError:
+            lang = {}
+
+        updated = False
 
         for k in entries:
             
             if k not in lang:
+
                 print(f"Missing translation @ {Path(lang_filename).name}, key:", k)
+                
+                if Path(lang_filename).name == f"{self.default_lang}.yml":
 
-                if lang_filename == f"{self.default_lang}.yml":
                     lang[k] = k
+                    updated = True
+        
+        if update_file is True and updated is True:
+
+            with open(lang_filename, "w", encoding="utf-8") as f:
+                yaml.safe_dump(lang, f, allow_unicode=True)
 
 
-    def run(self) -> None:
+    def run(
+        self,
+        update_file: bool = True
+    ) -> None:
         
         entries = self._fetch_translation_entries()
         
         for lang in os.listdir(self.langs_directory):
 
             if lang.endswith(".yml"):
-                self._fix_translation_file(os.path.join(self.langs_directory, lang), entries)
+                self._fix_translation_file(os.path.join(self.langs_directory, lang), entries, update_file)

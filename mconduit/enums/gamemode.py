@@ -1,8 +1,8 @@
 import enum
 
 
-class Gamemode(str, enum.Enum):
-    Survival = "survival"
-    Creative = "creative"
-    Adventure = "adventure"
-    Spectator = "spectator"
+class Gamemode(enum.StrEnum):
+    SURVIVAL  = "survival"
+    CREATIVE  = "creative"
+    ADVENTURE = "adventure"
+    SPECTATOR = "spectator"

@@ -1,7 +1,11 @@
-from typing import List, Dict
+from typing import List, Tuple, Dict
 from pathlib import Path
 import yaml
 import os
+import re
+
+
+REGEX_PATTERN = r"\{.*?\}"
 
 
 class Lang:
@@ -12,9 +16,10 @@ class Lang:
     server.lang["translation-id"]
     """
 
-    __lang: str
-    __path: Path
-    __lang_dict: Dict[str, str]
+    _lang: str
+    _path: Path
+    _lang_dict: Dict[str, str]
+    _entries_regexes: List[Tuple[re.Pattern, str, List[str]]]
 
 
     def __init__(
@@ -23,50 +28,84 @@ class Lang:
         default_lang: str
     ) -> None:
 
-        self.__path = Path(path)
+        self._path = Path(path)
         
         if self._load_lang(default_lang):
-            self.__lang = default_lang
+            self._lang = default_lang
         else:
-            raise ValueError
+            raise ValueError(f"Language file {default_lang}.yml not found or corrupted!")
 
     
     def _load_lang(self, lang: str) -> bool:
 
-        path = self.__path / f"{lang}.yml"
+        path = self._path / f"{lang}.yml"
 
         if not path.exists():
             return False
         
-        with open(path) as f:
+        with open(path, "r", encoding="utf-8") as f:
 
-            self.__lang_dict = yaml.safe_load(f)
-            self.__lang = lang
+            self._lang_dict = yaml.safe_load(f) or {}
+
+            self._entries_regexes = []
+
+            sorted_keys = sorted(self._lang_dict.keys(), key=len, reverse=True)
+
+            for key in sorted_keys:
+
+                value = self._lang_dict[key]
+
+                if re.search(REGEX_PATTERN, key):
+
+                    placeholders = re.findall(REGEX_PATTERN, key)
+                    parts = re.split(REGEX_PATTERN, key)
+                    escaped_parts = [re.escape(part) for part in parts]
+
+                    regex_pattner = "^" + "(.*)".join(escaped_parts) + "$"
+
+                    self._entries_regexes.append(
+                        (re.compile(regex_pattner), value, placeholders)
+                    )
+
+            self._lang = lang
             
             return True
 
         return False
     
 
-    def __getitem__(self, *args: str) -> str:
+    def __getitem__(self, key: str) -> str:
 
-        try:
-            args = list(args)
-            
-            string = self.__lang_dict[args.pop(0)]
-            
-            for id, item in enumerate(args):
-                string = string.replace("{" + str(id) + "}", item)
 
-            return string
+        if key in self._lang_dict:
+            return self._lang_dict[key]
+        
+        for pattern, value, placeholders in self._entries_regexes:
 
-        except KeyError:
-            return "<item not found>"
+            match = pattern.fullmatch(key)
+
+            if match is not None:
+
+                variables = match.groups()
+                kwargs: Dict[str, str] = {}
+
+                for i, name in enumerate(placeholders):
+                    
+                    clean_name = name.strip("{}")
+                    kwargs[clean_name] = variables[i]
+
+                try:
+                    return value.format(**kwargs)
+                
+                except (KeyError) as e:
+                    pass
+
+        return key
 
 
     @property
     def lang(self) -> str:
-        return self.__lang
+        return self._lang
 
     
     @property
@@ -75,7 +114,7 @@ class Lang:
         All the languages that can be used
         """
 
-        langs = [item.replace(".yml", "") for item in os.listdir(self.__path) if item.endswith(".yml")]
+        langs = [item.replace(".yml", "") for item in os.listdir(self._path) if item.endswith(".yml")]
         
         if "en_us" in langs:
             langs.remove("en_us")

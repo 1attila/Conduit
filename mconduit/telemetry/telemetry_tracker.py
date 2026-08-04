@@ -4,7 +4,7 @@ import atexit
 import uuid
 import time
 
-from .telemetry_storage import TelemetryStorage
+from .reporter import TelemetryReporter
 from ..utils.errors import ConduitError, get_last_error
 
 if TYPE_CHECKING:
@@ -24,86 +24,108 @@ class TelemetryTracker:
         handler: "Handler",
     ) -> None:
         
-        self.__handler = handler
-        self.__is_conduit_loaded = False 
-        self.__session_id = str(uuid.uuid4())
-        self.__server_mapping: Dict[str, str] = {} # filled in self.conduit_load()
-        self.__latest_event = ""
-        self.__latest_error = ConduitError("place-holder", None, None, None)
-        self.__storage = TelemetryStorage()
-        self.__enabled = True
+        self._handler = handler
+        self._is_conduit_loaded = False 
+        self._session_id = str(uuid.uuid4())
+        self._server_mapping: Dict[str, str] = {} # filled in self.conduit_load()
+        self._latest_event = ""
+        self._latest_error = ConduitError("place-holder", None, None, None)
+        self._reporter = TelemetryReporter("http://5.95.179.197/report")
+        self._enabled = True
 
         atexit.register(self.at_exit)
 
     
     def enable(self) -> None:
-        self.__enabled  = True
+        self._enabled  = True
 
     
     def disable(self) -> None:
-        self.__enabled = False
+        self._enabled = False
 
     
     def at_exit(self) -> None:
         
-        if self.__latest_event == "conduit-unload":
+        if self._latest_event == "conduit-unload":
+
+            self._reporter.stop()
+
+            if self._reporter.is_alive():
+                self._reporter.join(timeout=3)
+
             return
             
         last_error = get_last_error()
         
-        if last_error is not None and last_error != self.__latest_error:
+        if last_error is not None and last_error != self._latest_error:
             self.exception_raised(last_error)
             
         self.conduit_unload(reload=False)
 
+        self._reporter.stop()
+
+        if self._reporter.is_alive():
+            self._reporter.join(timeout=3)
+
 
     def track_event(self, event_payload: Dict[str, Any]) -> None:
         
-        if self.__enabled is False:
+        if self._enabled is False:
             return
 
         complete_payload = {
-            "session-id": self.__session_id,
+            "session-id": self._session_id,
             "event": event_payload,
             "time": time.time()
         }
 
-        self.__latest_event = event_payload["type"]
-        self.__storage.store(complete_payload)
+        self._latest_event = event_payload["type"]
+        self._reporter.append_event(complete_payload)
 
     
     def on_first_run(self) -> None:
 
         self.track_event(
             {
-                "type": "first-run"
+                "type": "first-run",
+                "conduit-version": self._handler.version,
+                "python-version": platform.python_version(),
+                "system-type": platform.system(),
+                "arch": platform.architecture()
             }
         )
     
     
     def conduit_load(self, reload: bool = False) -> None:
 
-        self.__server_mapping = {server.name: str(uuid.uuid4()) for server in self.__handler.servers}
+        self._server_mapping = {server.name: str(uuid.uuid4()) for server in self._handler.servers}
         servers_data = {}
 
-        for server in self.__handler.servers:
+        for server in self._handler.servers:
+            
+            version = server.version
 
-            servers_data[self.__server_mapping[server.name]] = {
-                "loaded-plugins": [plugin.name for plugin in server.plugin_manager.plugins]
+            if version is not None:
+                version = str(version) # type: ignore
+
+            servers_data[self._server_mapping[server.name]] = {
+                "loaded-plugins": [plugin.name for plugin in server.plugin_manager.plugins],
+                "version": version
             }
 
         self.track_event(
             {
                 "type": "conduit-load",
                 "reload": reload,
-                "conduit-version": self.__handler.version,
+                "conduit-version": self._handler.version,
                 "python-version": platform.python_version(),
                 "system-type": platform.system(),
+                "arch": platform.architecture(),
                 "servers": servers_data
             }
         )
 
-        self.__is_conduit_loaded = True
+        self._is_conduit_loaded = True
 
 
     def conduit_unload(self, reload: bool = False) -> None:
@@ -116,25 +138,26 @@ class TelemetryTracker:
         )
 
 
-    def plugin_download(self, plugin_name: str) -> None:
+    def plugin_download(self, plugin_name: str, forced: bool = False) -> None:
 
         self.track_event(
             {
                 "type": "plugin-download",
-                "plugin": plugin_name
+                "plugin": plugin_name,
+                "forced": forced
             }
         )
 
     
     def plugin_load(self, server: "Server", plugin_name: str) -> None:
         
-        if self.__is_conduit_loaded is False:
+        if self._is_conduit_loaded is False:
             return
         
         self.track_event(
             {
                 "type": "plugin-load",
-                "server": self.__server_mapping[server.name],
+                "server": self._server_mapping[server.name],
                 "plugin": plugin_name
             }
         )
@@ -142,13 +165,13 @@ class TelemetryTracker:
     
     def plugin_unload(self, server: "Server", plugin_name: str) -> None:
         
-        if self.__is_conduit_loaded is False:
+        if self._is_conduit_loaded is False:
             return
         
         self.track_event(
             {
                 "type": "plugin-unload",
-                "server": self.__server_mapping[server.name],
+                "server": self._server_mapping[server.name],
                 "plugin": plugin_name
             }
         )
@@ -161,7 +184,7 @@ class TelemetryTracker:
         new_version: str
     ) -> None:
         
-        if self.__is_conduit_loaded is False:
+        if self._is_conduit_loaded is False:
             return
         
         self.track_event(
@@ -181,13 +204,13 @@ class TelemetryTracker:
         command_name: str
     ) -> None:
         
-        if self.__is_conduit_loaded is False:
+        if self._is_conduit_loaded is False:
             return
 
         self.track_event(
             {
                 "type": "plugin-command-used",
-                "server": self.__server_mapping[server.name],
+                "server": self._server_mapping[server.name],
                 "plugin": plugin.name,
                 "command": command_name
             }
@@ -202,7 +225,7 @@ class TelemetryTracker:
         if exception is None:
             return
         
-        self.__latest_error = exception
+        self._latest_error = exception
 
         self.track_event(
             {

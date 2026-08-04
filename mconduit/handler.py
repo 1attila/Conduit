@@ -9,33 +9,26 @@ import json
 import sys
 import os
 
-from .plugins.plugin_catalogue import PluginCatalogue
-from .plugins.plugin_process import ProcessHandler
-from .utils.parallel_task_loop import ParallelTaskLoop
-from .utils.reload_trigger import reload_trigger
-from .utils.getters import get_teams
-from .conduit_config import HandlerConfig
-from .server_runner import ServerRunner
-from .conduit_updater import ConduitUpdater
-from .telemetry import TelemetryTracker
-from .cli import Cli, WelcomeScreen 
-from .context import Context
-from .lang.lang import Lang
-from .server import Server
-from .__version__ import __version__
-from .constants import *
-from . import sound
+from mconduit.cli import Cli, WelcomeScreen, AskForPermissions
+from mconduit.plugins.plugin_catalogue import PluginCatalogue
+from mconduit.plugins.plugin_process import ProcessHandler
+from mconduit.utils.parallel_task_loop import ParallelTaskLoop
+from mconduit.utils.reload_trigger import reload_trigger
+from mconduit.utils.getters import get_teams
+from mconduit.perms.storage import PermissionStorage
+from mconduit.conduit_config import HandlerConfig
+from mconduit.server_runner import ServerRunner
+from mconduit.conduit_updater import ConduitUpdater
+from mconduit.telemetry import TelemetryTracker
+from mconduit.context import Context
+from mconduit.lang.lang import Lang
+from mconduit.server import Server
+from mconduit.__version__ import __version__
+from mconduit.constants import *
+from mconduit import sound
 
 
 logger = logging.getLogger()
-
-PERM_DICT: Dict[str, List[Callable[[Union["Handler", Server, Context]], Any]]] = {
-    "Guest": [],
-    "User": [],
-    "Helper": [],
-    "Admin": [],
-    "Owner": []
-}
 
 
 class Handler:
@@ -46,34 +39,36 @@ class Handler:
     """
 
 
-    __config: HandlerConfig
-    __server_runners: List[ServerRunner]
-    __lang: Lang
-    __stop_event: Event
-    __updater: Optional[ConduitUpdater]
-    __cli: Cli
-    __catalogue: PluginCatalogue
-    __process_handler: ProcessHandler
-    __update: bool
-    __parallel_tasks: ParallelTaskLoop
-    __lock: RLock
-    __telemetry: TelemetryTracker
+    _config: HandlerConfig
+    _server_runners: List[ServerRunner]
+    _lang: Lang
+    _stop_event: Event
+    _updater: Optional[ConduitUpdater]
+    _cli: Cli
+    _catalogue: PluginCatalogue
+    _process_handler: ProcessHandler
+    _update: bool
+    _has_tui: bool
+    _parallel_tasks: ParallelTaskLoop
+    _lock: RLock
+    _telemetry: TelemetryTracker
+    _perm_storage: PermissionStorage
     _reload_flag: bool # Used in reload_trigger
 
 
     def __init__(
         self,
         config: Optional[HandlerConfig],
-        restart: bool=False,
-        gui: bool=True,
-        update: bool=True
+        restart: bool = False,
+        gui: bool = True,
+        update: bool = True
     ) -> None:
         
-        self.__telemetry = TelemetryTracker(self)
+        self._telemetry = TelemetryTracker(self)
 
         if config is None:
 
-            self.__telemetry.on_first_run()
+            self._telemetry.on_first_run()
             config = WelcomeScreen(gui, update, self).run()
 
             if config is not None:
@@ -81,51 +76,55 @@ class Handler:
             else:
                 raise RuntimeError("Config not found!")
         
-        self.__config = config
-        self.__stop_event = Event()
-        self.__server_runners = []
-        self.__update = update
-        self.__lock = RLock()
+        self._config = config
+        self._stop_event = Event()
+        self._server_runners = []
+        self._update = update
+        self._lock = RLock()
         self._reload_flag = False
+        self._has_tui = not gui
 
-        if self.__config.collect_telemetry_data is False:
-            self.__telemetry.disable()
-        
-        for server_config in self.__config.servers_config:
+        if self._config.collect_telemetry_data is False:
+            self._telemetry.disable()
+
+        self._parallel_tasks = ParallelTaskLoop()
+
+        try:
+            self._lang = Lang(Path.cwd() / "resources", self._config.default_language)
+
+        except ValueError:
+            raise ValueError(f"Unable to load language: {self._config.default_language}")
+
+        self._cli = Cli(self._stop_event, self, self._lang, gui, restart)
+
+        for server_config in self._config.servers_config:
             
             try:
-                server_runner = ServerRunner(server_config, self.__stop_event, restart, self)
-                self.__server_runners.append(server_runner)
+                server_runner = ServerRunner(server_config, self._stop_event, restart, self)
+                self._server_runners.append(server_runner)
             
             except Exception as e:
                 logger.error(f"Unable to create server {server_config.names[0]}, error: {e}")
-        
+
+        self._perm_storage = PermissionStorage(self)
         self._try_generate_resources()
 
-        try:
-            self.__lang = Lang(Path.cwd() / "resources", self.__config.default_language)
-
-        except ValueError:
-            raise ValueError(f"Unable to load language: {self.__config.default_language}")
-
-        if self.__update is True:
-            self.__updater = ConduitUpdater(self)
+        if self._update is True:
+            self._updater = ConduitUpdater(self)
         else:
-            self.__updater = None
+            self._updater = None
 
-        self.__catalogue = PluginCatalogue(self)
-        self.__process_handler = ProcessHandler(self)
-
-        self.__parallel_tasks = ParallelTaskLoop()
+        self._catalogue = PluginCatalogue(self)
+        self._process_handler = ProcessHandler(self)
         
-        if self.__update is True:
-            self.__parallel_tasks.add_task(self.__updater.check_for_updates) # type: ignore
+        if self._update is True:
+            self._parallel_tasks.add_task(self._updater.check_for_updates) # type: ignore
         
-        self.__parallel_tasks.add_task(reload_trigger, self)
-        self.__parallel_tasks.add_task(self.__catalogue._update_catalogue_cache)
-        self.__parallel_tasks.add_task(self.__process_handler.check_processes)
+        self._parallel_tasks.add_task(reload_trigger, self)
+        self._parallel_tasks.add_task(self._catalogue._update_catalogue_cache)
+        self._parallel_tasks.add_task(self._process_handler.check_processes)
         
-        self.__parallel_tasks.start()
+        self._parallel_tasks.start()
         
         self.to_all_servers(lambda s: s.plugin_manager.load_all_plugins())
         self.to_all_servers(lambda s: s._on_conduit_start())
@@ -137,28 +136,22 @@ class Handler:
         
         self.to_all_servers(lambda s: s.playsound(sound.block.conduit.activate))
 
-        self.__telemetry.conduit_load(restart)
+        self._telemetry.conduit_load(restart)
 
-        self.__cli = Cli(self.__stop_event, self, self.__lang, gui, restart)
+        if not self._cli.has_gui:
+            
+            self._cli.start()
 
-        if not self.__cli.has_gui:
-            self.__cli._console_loop_thread() # prompt_toolkit requires to run in the main thread, so we loop it at the very end
+            while not self._stop_event.is_set():
+                ...
 
     
     def _try_generate_resources(self) -> None:
         """
-        Generates and initializes `plugins` dir, `active_plugins.json` and `perms.json` files if they don't exist yet.
+        Generates and initializes `plugins` dir, `active_plugins.json`, and `skipped_updates.jsonl` files if they don't exist yet.
 
         Note that command_cache file is generated by CommandCache directly
         """
-
-        if not Path(PERMS_FILE).exists():
-
-            with open(PERMS_FILE, "x") as f:
-
-                initial_json = {server.name: PERM_DICT for server in self.servers}
-
-                f.write(json.dumps(initial_json, indent=4))
 
         if not Path(PLUGINS_DIR).exists():
             os.mkdir(PLUGINS_DIR)
@@ -171,6 +164,11 @@ class Handler:
 
                 f.write(json.dumps(initial_json, indent=4))
 
+        if not Path(SKIPPED_UPDATES_FILE).exists():
+
+            with open(SKIPPED_UPDATES_FILE, "x") as f:
+                f.write("{}")
+
         self._load_perms()
 
     
@@ -181,36 +179,22 @@ class Handler:
         If they are missing, asks for the user to specify them
         """
 
-        with open(PERMS_FILE) as f:
+        self._perm_storage.load()
 
-            perms = json.load(f)
-            save_perms = False
-
-            for server in self.servers:
-                
-                try:
-                    server_perms = perms[server.name]
-                except KeyError:
-                    server_perms = self._set_server_perms(server, PERM_DICT)
-                    save_perms = True
-                    
-                if (
-                    server_perms.get("Helper", []) == [] and
-                    server_perms.get("Admin", []) == [] and
-                    server_perms.get("Owner", []) == []
-                ):
-                    server_perms = self._set_server_perms(server, server_perms)
-                    save_perms = True
-
-                perms[server.name] = server_perms
-                server._set_perms(server_perms)
-
-        if save_perms is True:
+        for server in self.servers:
             
-            with open(PERMS_FILE, "w") as f:
-                json.dump(perms, f, indent=4)
+            server_perms = server.permissions
+                    
+            if (
+                server_perms.get("helper", []) == [] and
+                server_perms.get("admin", []) == [] and
+                server_perms.get("owner", []) == []
+            ):  
 
-            logger.info("Permissions saved sucesfully")
+                if self.has_tui is True:
+                    AskForPermissions(server).run()
+                else:
+                    logger.warning(f"Higher permission for {server} are unset!")
         
 
     def _set_server_perms(
@@ -296,37 +280,26 @@ class Handler:
         Starts a new version of Conduit and swaps the current with the updated one
         """
 
-        self.__telemetry.conduit_unload(reload=True)
+        self._telemetry.conduit_unload(reload=True)
 
         args = [sys.executable, "-m", "mconduit", "--restart"]
 
         if self.cli.has_gui:
             args.append("--gui")
 
-        if self.__update:
+        if self._update:
             args.append("--update")
 
         self.to_all_servers(lambda s: s.execute('/tellraw @a {"color": "gold", "text": "[Conduit]: Reloading..."}'))
-        self.__stop_event.set()
+        self._stop_event.set()
         self.to_all_servers(lambda s: s._join_input_thread())
-        self.__cli._stop()
+        self._cli._stop()
 
         sys.stdout.flush()
 
         subprocess.run(args)
 
         sys.exit()
-
-    
-    @property
-    def _updater(self) -> Optional[ConduitUpdater]:
-        """
-        Handler updater, used to update and send the signal to reload Conduit.
-
-        This should be used only by Cli
-        """
-
-        return self.__updater
 
 
     @property
@@ -335,18 +308,18 @@ class Handler:
         Main lang
         """
 
-        return self.__lang
-    
+        return self._lang
+
 
     def set_lang(self, lang: str):
         """
         Sets the main language
         """
 
-        with self.__lock:
+        with self._lock:
             
-            self.__lang.set_lang(lang)
-            self.__config.save()
+            self._lang.set_lang(lang)
+            self._config.save()
 
 
     @property
@@ -355,7 +328,7 @@ class Handler:
         All the minecraft servers
         """
 
-        return [runner.server for runner in self.__server_runners]
+        return [runner.server for runner in self._server_runners]
     
 
     @property
@@ -364,7 +337,7 @@ class Handler:
         Servers command prefix
         """
 
-        return self.__config.command_prefix
+        return self._config.command_prefix
     
 
     @property
@@ -373,7 +346,16 @@ class Handler:
         Conduit CLI
         """
 
-        return self.__cli
+        return self._cli
+    
+
+    @property
+    def has_tui(self) -> bool:
+        """
+        True if it has the textual user interface
+        """
+
+        return self._has_tui
     
 
     @property
@@ -382,16 +364,16 @@ class Handler:
         Conduit plugin catalogue
         """
 
-        return self.__catalogue
+        return self._catalogue
     
 
     @property
-    def async_tasks(self) -> ParallelTaskLoop:
+    def parallel_tasks(self) -> ParallelTaskLoop:
         """
         Conduit ParallelTaskLoop
         """
 
-        return self.__parallel_tasks
+        return self._parallel_tasks
 
     
     @property
@@ -400,7 +382,16 @@ class Handler:
         Conduit telemetry tracker
         """
 
-        return self.__telemetry
+        return self._telemetry
+
+    
+    @property
+    def permission_storage(self) -> PermissionStorage:
+        """
+        Class responsable for storing the permissions
+        """
+
+        return self._perm_storage
     
 
     @property
@@ -419,8 +410,8 @@ class Handler:
         Should be called only by Cli
         """
         
-        self.__telemetry.conduit_unload(reload=False)
-        self.__stop_event.set()
+        self._telemetry.conduit_unload(reload=False)
+        self._stop_event.set()
         sys.exit(0)
 
     
@@ -432,6 +423,8 @@ class Handler:
         for server in self.servers:
             if name in server.names:
                 return server
+
+        return None
 
 
     def start_servers(self) -> None:
@@ -457,7 +450,7 @@ class Handler:
         lambda must have a parameter wich is the server
         """
         
-        for runner in self.__server_runners:
+        for runner in self._server_runners:
             fn(runner.server)
 
     

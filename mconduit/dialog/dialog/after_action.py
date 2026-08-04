@@ -2,6 +2,6 @@ import enum
 
 
 class AfterAction(str, enum.Enum):
-    Close           = "close"
-    NONE            = "none"
-    WaitForResponse = "wait_for_response"
+    CLOSE             = "close"
+    NONE              = "none"
+    WAIT_FOR_RESPONSE = "wait_for_response"

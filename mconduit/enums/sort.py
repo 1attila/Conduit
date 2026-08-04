@@ -1,8 +1,8 @@
 import enum
 
 
-class Sort(str, enum.Enum):
-    Arbitrary = "arbitrary"
-    Furthest  = "furthest"
-    Nearest   = "nearest"
-    Random    = "random"
+class Sort(enum.StrEnum):
+    ARBITRARY = "arbitrary"
+    FURTHEST  = "furthest"
+    NEAREST   = "nearest"
+    RANDOM    = "random"

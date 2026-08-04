@@ -1,6 +1,6 @@
 from typing import Dict, List
 
-from .._types import Message
+from mconduit._types import Message
 
 
 def _draw_recursive(tree: Dict, messages: List[Message]) -> Message:

@@ -3,8 +3,7 @@ Conduit Plugins APIs
 """
 
 from .plugin import Plugin
-from .plugin_command import command, Command
-from .perms import Permission, perms, check_perms
+from .plugin_command import command, Command, CommandFunc
 from .range import Range
 from .event import event
 from .config import Config
@@ -15,8 +14,7 @@ from . import checks as checks
 
 __all__ = [
     "Plugin",
-    "Command", "command",
-    "Permission", "perms", "check_perms",
+    "Command", "command", "CommandFunc",
     "checks",
     "event",
     "Config",

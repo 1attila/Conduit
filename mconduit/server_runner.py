@@ -2,15 +2,15 @@ from typing import Optional, Union, Iterator, Callable, TYPE_CHECKING
 from pathlib import Path
 import threading
 import paramiko
-import pygtail
+import pygtail # type: ignore[import-untyped]
 import os
 
-from .conduit_config import ServerRunnerConfig
-from .server import Server
-from .stdout_parser import StdoutParser
+from mconduit.conduit_config import ServerRunnerConfig
+from mconduit.server import Server
+from mconduit.stdout_parser import StdoutParser
 
 if TYPE_CHECKING:
-    from .handler import Handler
+    from mconduit.handler import Handler
 
 
 class ServerRunner:
@@ -28,7 +28,7 @@ class ServerRunner:
     restart_flag: bool
     init_flag: bool
     _chan: paramiko.Channel
-    __client: Optional[paramiko.SSHClient]
+    _client: Optional[paramiko.SSHClient]
     _get_new_lines: Callable[[], Iterator[str]]
 
 
@@ -46,7 +46,7 @@ class ServerRunner:
         self.restart_flag = restart_flag
         self.init_flag = True
         self._get_new_lines = self._get_new_lines_local
-        self.__client = None
+        self._client = None
 
         if self.config.machine_config is not None:
 
@@ -56,7 +56,7 @@ class ServerRunner:
 
             except Exception as e:
                 
-                self.__client = None
+                self._client = None
                 raise e
 
         self.server = Server(self)
@@ -71,15 +71,15 @@ class ServerRunner:
         Setups and connects the Paramiko SSH client
         """
         
-        self.__client = paramiko.SSHClient()
-        self.__client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        self._client = paramiko.SSHClient()
+        self._client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         try:
 
             if self.config.machine_config is None:
                 raise ValueError("Maching configs should not be None")
 
-            self.__client.connect(
+            self._client.connect(
                 hostname=self.config.machine_config.host,
                 port=self.config.machine_config.port,
                 username=self.config.machine_config.username,
@@ -92,7 +92,7 @@ class ServerRunner:
 
         except Exception as e:
                 
-            self.__client = None
+            self._client = None
             raise e
 
 
@@ -101,15 +101,15 @@ class ServerRunner:
         Checks if SSH transport has dropped and restores if it happened
         """
 
-        if not self.__client:
+        if not self._client:
             self._connect_ssh()
 
         elif (
-            not self.__client.get_transport() or
-            not self.__client.get_transport().is_active() # type: ignore
+            not self._client.get_transport() or
+            not self._client.get_transport().is_active() # type: ignore
         ):
             try:
-                self.__client.close()
+                self._client.close()
             except Exception as e:
                 pass
 
@@ -122,10 +122,10 @@ class ServerRunner:
 
         if not hasattr(self, "_chan") or self._chan.closed:
             
-            if self.__client is None:
+            if self._client is None:
                 return # type: ignore
 
-            _sdin, sdout, _sderr = self.__client.exec_command(
+            _sdin, sdout, _sderr = self._client.exec_command(
                 f"tail -n0 -F {self.config.path / 'logs' / 'latest.log'}",
                 bufsize=1,
                 get_pty=True
@@ -136,7 +136,7 @@ class ServerRunner:
 
     def _get_new_lines_remote(self) -> Iterator[str]:
         
-        if self.__client is None:
+        if self._client is None:
             return # type: ignore
 
         self._start_remote_tail()
@@ -223,16 +223,19 @@ class ServerRunner:
         self.stop()
 
 
-    def _read_file(self, relative_path: str) -> Optional[str]:
+    def _read_file(
+        self,
+        relative_path: str | Path
+    ) -> Optional[str]:
         """
         Fetches content from the given file on this server machine
         """
 
         path = str(self.config.path / relative_path)
 
-        if self.__client:
+        if self._client:
             
-            sftp = self.__client.open_sftp()
+            sftp = self._client.open_sftp()
             
             try:
                 with sftp.open(path, "r") as f:
@@ -248,24 +251,27 @@ class ServerRunner:
             return f.read()
 
     
-    def _write_file(self, relative_path: str, content: Union[str, bytes]) -> None:
+    def _write_file(
+        self,
+        relative_path: str | Path,
+        content: Union[str, bytes]
+    ) -> None:
         """
         Writes the given file with the specified content on this server machine
         """
 
         path = str(self.config.path / relative_path)
 
-        if self.__client:
+        if isinstance(content, bytes):
+            content = content.decode("utf-8")
+
+        if self._client:
             
-            sftp = self.__client.open_sftp()
+            sftp = self._client.open_sftp()
 
             try:
                 with sftp.open(path, "w") as f:
-
-                    if isinstance(content, bytes):
-                        f.write(content.decode("utf-8"))
-                    else:
-                        f.write(content)
+                    f.write(content)
             
             finally:
                 sftp.close()
@@ -288,12 +294,12 @@ class ServerRunner:
         ):
             self.main_loop_thread.join(timeout=5)
 
-        if self.__client is not None:
+        if self._client is not None:
 
             try:
-                self.__client.close()
+                self._client.close()
 
             except Exception as e:
                 pass
 
-            self.__client = None
+            self._client = None

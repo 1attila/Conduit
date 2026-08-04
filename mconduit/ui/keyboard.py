@@ -1,8 +1,9 @@
 from typing import Union, Callable, List, Any
 
-from ..text import Text
-from ..context import Context
-from .._types import Player
+from mconduit.text import Text
+from mconduit.context import Context
+from mconduit._types import Player
+from mconduit import sound
 
 
 class _Key:
@@ -14,9 +15,9 @@ class _Key:
         self,
         display: str,
         *,
-        other_keys: Union[List[str], str, None]=None,
-        suggesters: Union[List[str], str, None]=None
-    ) -> "_Key":
+        other_keys: Union[List[str], str, None] = None,
+        suggesters: Union[List[str], str, None] = None
+    ) -> None:
         """
         Parameters:
 
@@ -146,116 +147,116 @@ class Keyboard:
     """
 
 
-    __input: str
-    __shift_enabled: bool
-    __ctrl_enabled: bool
-    __alt_enabled: bool
-    __cap_enabled: bool
-    __cursor_pos: int
+    _input: str
+    _shift_enabled: bool
+    _ctrl_enabled: bool
+    _alt_enabled: bool
+    _cap_enabled: bool
+    _cursor_pos: int
     callback: Callable[[str], Any]
 
 
-    def __init__(self) -> "Keyboard":
+    def __init__(self) -> None:
         
-        self.__input = ""
-        self.__shift_enabled = False
-        self.__ctrl_enabled = False
-        self.__alt_enabled = False
-        self.__cap_enabled = False
-        self.__cursor_pos = 0
+        self._input = ""
+        self._shift_enabled = False
+        self._ctrl_enabled = False
+        self._alt_enabled = False
+        self._cap_enabled = False
+        self._cursor_pos = 0
 
 
     def _caps_enabled(self) -> bool:
         
-        return self.__shift_enabled != self.__cap_enabled
+        return self._shift_enabled != self._cap_enabled
 
     
     def _insert_text(self, text: str) -> None:
 
         assert len(text) == 1
 
-        characters = list(self.__input)
-        characters.insert(self.__cursor_pos, text)
+        characters = list(self._input)
+        characters.insert(self._cursor_pos, text)
 
-        self.__input = "".join(characters)
-        self.__cursor_pos += 1
+        self._input = "".join(characters)
+        self._cursor_pos += 1
 
 
     def _on_click(self, ctx: Context):
-        #TODO: Consider replacing with new API
-        ctx.server.execute(f"execute at {ctx.player.name} run playsound entity.arrow.hit_player")
+        
+        ctx.server.execute(f"execute at {ctx.player.name} run playsound {sound.entity.arrow.hit_player}")
         
         match ctx.id:
 
             case 13: # CANCEL_ID
                 
-                if len(self.__input) > 0:
-                    self.__input = self.__input[:-2]
+                if len(self._input) > 0:
+                    self._input = self._input[:-2]
                 return
             
             case 14: # TAB_ID
-                self.__input += " " * 4
+                self._input += " " * 4
                 return
 
             case 40: # NEW_LINE_ID
-                self.__input += "\n"
+                self._input += "\n"
                 return
 
             case 41: # SHIFT_ID
-                self.__shift_enabled = not self.__shift_enabled
+                self._shift_enabled = not self._shift_enabled
                 return
 
             case 52: # SHIFT_PAUSE_ID
-                self.__shift_enabled = not self.__shift_enabled
+                self._shift_enabled = not self._shift_enabled
                 return
 
             case 53: # CTRL_ID
-                self.__ctrl_enabled = not self.__ctrl_enabled
+                self._ctrl_enabled = not self._ctrl_enabled
                 return
 
             case 54: # ALT_ID
-                self.__alt_enabled = not self.__alt_enabled
+                self._alt_enabled = not self._alt_enabled
                 return
 
             case 55: # SPACE_ID
-                self.__input += " "
+                self._input += " "
                 return
 
         character: _Key = (ROW_0 + ROW_1 + ROW_2 + ROW_3 + ROW_4)[ctx.id]
         char = character.display
 
         if (
-            self.__shift_enabled is True and
-            self.__ctrl_enabled is True and
-            self.__alt_enabled is True
-            ):
+            self._shift_enabled is True and
+            self._ctrl_enabled is True and
+            self._alt_enabled is True
+        ):
 
             if len(character.other_keys) > 2:
 
-                self.__input += character.other_keys[2]
+                self._input += character.other_keys[2]
                 return
 
         if (
-            self.__ctrl_enabled is True and
-            self.__alt_enabled is True
-            ):
+            self._ctrl_enabled is True and
+            self._alt_enabled is True
+        ):
 
             if len(character.other_keys) > 1:
 
-                self.__input += character.other_keys[1]
+                self._input += character.other_keys[1]
                 return
 
-        if self.__cap_enabled():
+        if self._cap_enabled():
             
             if _is_special_char(char):
                 char = character.other_keys[0]
             else:
                 char = char.upper()
 
-            self.__input += char
+            self._input += char
             return
 
-        self.__input += char.lower()
+        self._input += char.lower()
 
     
     def draw(

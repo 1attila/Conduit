@@ -1,4 +1,4 @@
-from ..enums.dimension import Dimension
+from mconduit.enums.dimension import Dimension
 from .vec3d import Vec3d
 
 

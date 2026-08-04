@@ -6,7 +6,7 @@ This file stores all the version changelogs to be accessed from BuiltinPlugin
 CHANGELOGS = {
 
     "0.1.22": {
-        "release_date": "",
+        "release_date": "28/08/2025",
         "added": [
             "!!perms",
             "!!news",
@@ -29,7 +29,7 @@ CHANGELOGS = {
     "0.1.25": {"release_date": "", "added": [], "modified": [], "fixed": [], "removed": []},
     "0.1.26": {"release_date": "", "added": [], "modified": [], "fixed": [], "removed": []},
     "0.1.27": {
-        "release_date": "",
+        "release_date": "06/11/2025",
         "added": [
             "Persistent values are now thread-safe and dont require to call _save() anymore",
             "Full external machine support",
@@ -62,7 +62,7 @@ CHANGELOGS = {
         "removed": []
     },
     "0.1.28": {
-        "release_date": "",
+        "release_date": "30/12/2025",
         "added": [
             "Plugin.path",
             "utils.scoreboards.get_score()",
@@ -105,7 +105,7 @@ CHANGELOGS = {
         ]
     },
     "0.1.29": {
-        "release_date": "",
+        "release_date": "31/12/2025",
         "added": [
             "PluginManager._fetch_plugin_metadata()",
             "Server.playsound(), .stopsound()",
@@ -125,8 +125,8 @@ CHANGELOGS = {
         ],
         "removed": []
     },
-    "0.2.0": {
-        "release_date": "",
+    "0.3.0": {
+        "release_date": "28/03/2026",
         "added": [
             "Text.click() change_page action type",
             "_Types.Coordinate & relative()",
@@ -170,13 +170,85 @@ CHANGELOGS = {
             "Package plugins are not correctly loaded/unloaded/reloaded",
             "utils.scoreboards.get_latest_trigger_id now returns 0 instead of None",
             "Text.__radd__() now builds the next correctly",
-            "Color.LigthPurlple -> Color.Light in all API",
+            "Color.LigthPurple -> Color.LightPurple in all API",
             "Text doesnt raise anymore when deep-copied",
             "Rot.__repr__ doesnt raise AttributeError anymore",
             "*Some* mypy errors"
         ],
         "removed": [
             "ServerRunnerConfig.name (only.names now is supported)"
+        ]
+    },
+    "0.4.0": {
+        "release_date": "04/08/2026",
+        "added": [
+            "Plugin download can be forced",
+            "!!version list",
+            "Version, VersionCheck",
+            "Server.version",
+            "Server.online_players",
+            "conduit_version field on plugin metadata",
+            "--force flag in plugin download command",
+            "perms package",
+            "Context.notify() and notify_success()",
+            "Server download (fabric)",
+            "utils.debug() and Plugin.debug()",
+            "Cli.out() now prints Text with colors & styles",
+            "Server.save_all(), .save_all_flush()",
+            "*Some* tests to ensure everything is safer and reliable",
+            "WorldSnapshot",
+            "Block.name property and other utility methods",
+            "Vec3d.__rmul__()",
+            "Every server has its own separate plugin config now",
+            "Server.get_all_joined_players()",
+            "Server.get_player_named()",
+            "Server.online_players",
+            "scoreboard subpackage",
+            "Server.world, .overworld .nether .end properties",
+            "Server.teams, scoreboards, objectives, display_slots",
+            "Player.team, .display_name, __eq__()"
+        ],
+        "modified": [
+            "plugin dependencies -> python_dependencies in metadata.json",
+            "plugin finish its download even if its dependencies arent installed",
+            "improved BuiltinPlugin",
+            "plugin update notify complitely redone",
+            "utils.version_checker -> version",
+            "Server.get_online_players() -> fetch_online_players()",
+            "Player.inventory and .echest_inventory works with complex items too",
+            "Command.CastError now raises a useful message",
+            "Better CLI help message",
+            "CLI now runs on background",
+            "Lang parameters must be passed via f-string now",
+            "permission system has been redesigned completely",
+            "plugin persistent & config binding",
+            "Rcon errors are now not displayed by default",
+            "CachedWorldReader.clean_cache() -> clear_cache() and it's also faster",
+            "TextHandler now calls fetch_latest_trigger_id() only at initialization, making bind_text() a lot faster!",
+            "Improved errors informations (a bit more concise now)",
+            "Improved CLI colors and completions",
+            "Player.is_sneaking() is now a method and not a property",
+            "Renamed all the enums values from camel-case to sneak-case",
+            "Removed most of the name-mangling variables",
+            "Restructured Server classes",
+            "EntityDataFetcher now caches everything and its a lot faster",
+            "Player.spawn_pos -> respawn_pos, .spawn_dimension -> respawn_dimension"
+        ],
+        "fixed": [
+            "help command failed with parameters",
+            "*Some* mypy errors",
+            "External prints doesnt mess up with user typing in CLI anymore",
+            "Selector() is not modificated anymore",
+            "utils.color.rgb_to_hsv() prevents divisions by 0 now",
+            "Text.to_json() doesnt mutate text internal state anymore",
+            "Chunk.get_height() was incorrect",
+            "Context. info(), warn(), error(), success() now colors all the text and not just the first bit",
+            "PluginManager now unloads the plugin-package if the plugin didnt load correctly",
+            "Player.spawn_pos and .spawn_dimension fetched incorrect data",
+            "text.icon.three was mispelled (tree)"
+        ],
+        "removed": [
+            "PluginCatalogue.skipped_updates"
         ]
     }
 }

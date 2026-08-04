@@ -1,7 +1,7 @@
 import enum
 
 
-class Dimension(str, enum.Enum):
-    Overworld = "overworld"
-    Nether = "the_nether"
-    End = "the_end"
+class Dimension(enum.StrEnum):
+    OVERWORLD = "overworld"
+    NETHER    = "the_nether"
+    END       = "the_end"

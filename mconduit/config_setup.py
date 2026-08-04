@@ -4,8 +4,8 @@ import platform
 import random
 import os
 
-from .conduit_config import ServerRunnerConfig
-from .server_api import Properties
+from mconduit.conduit_config import ServerRunnerConfig
+from mconduit.server_api import Properties
 
 
 def generate_rcon_password(length: int = 10) -> str:
@@ -22,7 +22,7 @@ def get_ip_port_mappings(
     servers_configs: List[ServerRunnerConfig]
 ) -> Dict[str, List[int]]:
     
-    mappings = {}
+    mappings: Dict[str, List[int]] = {}
 
     for config in servers_configs:
         
@@ -50,27 +50,29 @@ def get_port(
     if configs is not None:
         mappings = get_ip_port_mappings(configs)
     
-    used_ips = []
+    assert mappings is not None
+    
+    used_ports: List[int] = []
     
     for s_ip, ports in mappings.items():
 
         if s_ip == ip:
-            used_ips.extend(ports)
+            used_ports.extend(ports)
     
     port = int(default_port)
 
-    while port in used_ips and port < 65533:
+    while port in used_ports and port < 65533:
         port += 1
 
-    if port not in used_ips:
+    if port not in used_ports:
         return port
     
     port = default_port - 1
 
-    while port in used_ips and port > 2:
+    while port in used_ports and port > 2:
         port -= 1
 
-    if port not in used_ips:
+    if port not in used_ports:
         return port
     
     raise RuntimeError("Unable to set a new port!")

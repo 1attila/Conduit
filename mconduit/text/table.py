@@ -5,10 +5,10 @@ from functools import lru_cache
 import copy
 import enum
 
-from .text import Text
+from mconduit.text.text import Text
 
 if TYPE_CHECKING:
-    from .._types import Message
+    from mconduit._types.message import Message
 
 
 MINECRAFT_FONT_WIDTHS = {

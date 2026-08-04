@@ -1,4 +1,4 @@
-from ..json import Serializable, Field
+from mconduit.json import Serializable, Field
 
 
 class Item(Serializable):

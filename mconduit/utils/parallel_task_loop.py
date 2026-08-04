@@ -2,7 +2,6 @@ from typing import Callable, List, Any
 from dataclasses import dataclass
 import threading
 import traceback
-import time
 
 
 @dataclass
@@ -18,21 +17,21 @@ class ParallelTaskLoop:
     """
 
 
-    __thread: threading.Thread
-    __funcs: List[FunctionDescriptor]
-    __interval: int
-    __stop_flag: bool
+    _thread: threading.Thread
+    _funcs: List[FunctionDescriptor]
+    _interval: float
+    _stop_flag: threading.Event
 
 
     def __init__(
         self,
-        interval: int = 10
+        interval: float = 10.0
     ) -> None:
         
-        self.__thread = threading.Thread(target=self.__tick)
-        self.__funcs = []
-        self.__interval = interval
-        self.__stop_flag = False
+        self._thread = threading.Thread(target=self._tick)
+        self._funcs = []
+        self._interval = interval
+        self._stop_flag = threading.Event()
 
     
     def start(self) -> None:
@@ -40,7 +39,7 @@ class ParallelTaskLoop:
         Starts to loop the functions in a thread
         """
 
-        self.__thread.start()
+        self._thread.start()
 
     
     def stop(self) -> None:
@@ -48,8 +47,8 @@ class ParallelTaskLoop:
         Stops to loop all the functions and joins the thread
         """
 
-        self.__stop_flag = True
-        self.__thread.join()
+        self._stop_flag.set()
+        self._thread.join()
 
     
     @property
@@ -58,7 +57,7 @@ class ParallelTaskLoop:
         A list of all the functions with their execution order
         """
         
-        return [fn.name for fn in self.__funcs]
+        return [fn.name for fn in self._funcs]
 
 
     def add_task(self, fn: Callable, *args) -> None:
@@ -66,26 +65,23 @@ class ParallelTaskLoop:
         Appends the given function to the list of tasks to execute in loop
         """
 
-        if len(args) > 1:
-            args = list(args)
-
-        self.__funcs.append(
-            FunctionDescriptor(fn, fn.__name__, args)
+        self._funcs.append(
+            FunctionDescriptor(fn, fn.__name__, list(args))
         )
 
 
-    def __tick(self) -> None:
+    def _tick(self) -> None:
         """
         Function that loops runs all the given functions in loop in a thread
         """
         
-        while not self.__stop_flag:
+        while not self._stop_flag.is_set():
             
-            for f_desc in self.__funcs:
+            for f_desc in self._funcs:
 
                 try:
                     f_desc.func(*f_desc.parameters)
                 except Exception as e:
                     traceback.print_exc()
 
-            time.sleep(self.__interval)
+            self._stop_flag.wait(self._interval)

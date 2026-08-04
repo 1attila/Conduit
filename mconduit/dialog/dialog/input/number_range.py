@@ -27,15 +27,15 @@ class NumberRange(BaseInput):
         key: str,
         label: Text,
         *,
-        width: int=200,
+        width: int = 200,
         start: int,
         end: int,
-        step: Optional[int]=None,
-        initial: Optional[int]=None
-    ) -> "NumberRange":
+        step: Optional[int] = None,
+        initial: Optional[int] = None
+    ) -> None:
         
         super().__init__(
-            type=InputType.NumberRange,
+            type=InputType.NUMBER_RANGE,
             key=key,
             label=label
         )

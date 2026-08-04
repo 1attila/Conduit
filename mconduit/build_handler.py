@@ -5,11 +5,11 @@ Conduit entrypoint
 from typing import Optional
 import sys
 
-from .handler import Handler
-from .load_config import load_config
+from mconduit.handler import Handler
+from mconduit.load_config import load_config
 
 
-def build_handler(config_path: Optional[str]=None) -> Handler:
+def build_handler(config_path: Optional[str] = None) -> Handler:
     """
     Builds the handler
     """

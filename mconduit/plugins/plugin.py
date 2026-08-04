@@ -1,15 +1,17 @@
+from __future__ import annotations
 from typing import (
     Callable,
     Optional,
+    Union,
     Dict,
     List,
     Tuple,
     Iterable,
     Mapping,
-    Generic,
     Type,
     TypeVar,
     Any,
+    get_type_hints,
     get_origin,
     get_args,
     TYPE_CHECKING
@@ -19,21 +21,23 @@ import multiprocessing
 import datetime
 import logging
 import inspect
+import types
 import copy
 
-from .plugin_process import PluginProcess
-from .plugin_command import Command
-from .persistent import Persistent, P
-from .event import EventListener
-from .config import Config, C
-from  .. import constants
+from mconduit.plugins.plugin_process import PluginProcess
+from mconduit.plugins.plugin_command import Command
+from mconduit.plugins.persistent import Persistent, P
+from mconduit.plugins.event import EventListener
+from mconduit.plugins.config import Config, C
+from mconduit.utils import Version, create_plg_debug
+from mconduit import constants
 
 if TYPE_CHECKING:
-    from ..event import Event
-    from ..context import Context
-    from ..server import Server
-    from ..lang.lang import Lang
-    from ..plugin_manager import PluginManager
+    from mconduit.event import Event
+    from mconduit.context import Context
+    from mconduit.server import Server
+    from mconduit.lang.lang import Lang
+    from mconduit.plugin_manager import PluginManager
 
 
 T = TypeVar("T")
@@ -53,43 +57,44 @@ class CommandCompletion:
         self.description = description
 
 
-class Plugin(Generic[C, P]):
+class Plugin:
     """
     Conduit Plugin base class
 
     Inherit this class for every plugin you want to make
     """
     
-    __manager: "PluginManager"
-    __metadata: Dict
-    __events: Dict["Event", List[Callable]]
-    __commands: List[Command]
-    __running_processes: List[PluginProcess]
-    __server: "Server"
-    __lang: Optional["Lang"]
-    __config: Optional[Type[C]]
+    _manager: PluginManager
+    _metadata: Dict
+    _events: Dict[Event, List[Callable]]
+    _commands: List[Command]
+    _running_processes: List[PluginProcess]
+    _server: Server
+    _lang: Optional[Lang]
+    config: Optional[Config]
     logger: logging.Logger
-    persistent: Type[P]
+    persistent: Persistent
+    debug: Callable[[Any], None]
 
 
     def __init__(
         self,
-        manager: "PluginManager",
+        manager: PluginManager,
         metadata: Dict,
-        lang: Optional["Lang"]
+        lang: Optional[Lang]
     ) -> None:
         
-        self.__manager = manager
-        self.__metadata = metadata
-        self.__server = manager.server
-        self.__lang = lang
-        self.__config = None
+        self._manager = manager
+        self._metadata = metadata
+        self._server = manager.server
+        self._lang = lang
+        self.debug = create_plg_debug(self)
         self.logger = logging.getLogger(self.name)
         self._initialize_datas()
         
-        self.__commands = []
-        self.__events = {}
-        self.__running_processes = []
+        self._commands = []
+        self._events = {}
+        self._running_processes = []
 
         for item in dir(self.__class__):
             attr = getattr(self.__class__, item)
@@ -97,11 +102,11 @@ class Plugin(Generic[C, P]):
             if isinstance(attr, Command):
                 
                 cmd_clone = self._clone_command_tree(attr)
-                self.__commands.append(cmd_clone)
+                self._commands.append(cmd_clone)
 
             elif isinstance(attr, EventListener):
                 attr._callback = attr._callback.__get__(self, self.__class__)
-                self.__events.setdefault(attr._event, []).append(attr._callback)
+                self._events.setdefault(attr._event, []).append(attr._callback)
 
         try:
             self.on_load()
@@ -114,26 +119,38 @@ class Plugin(Generic[C, P]):
         Loads the persistent and config classes from the rispective files
         """
 
-        for base in type(self).__orig_bases__: # type: ignore
+        try:
+            hints = get_type_hints(self.__class__)
+        except:
+            hints = getattr(self, "__annotations__", {})
 
-            if get_origin(base) is Plugin:
+        def extract_base_type(hint: Any, base_class: Type) -> Optional[Type]:
 
-                args = get_args(base)
+            if isinstance(hint, type) and issubclass(hint, base_class):
+                return hint
+            
+            origin = get_origin(hint)
 
-                if args is not None:
+            if origin is Union or origin is getattr(types, "UnionType", None):
 
-                    for arg in args:
-                        
-                        if arg is None:
-                            continue
+                for arg in get_args(hint):
+                    
+                    if isinstance(arg, type) and issubclass(arg, base_class):
+                        return arg
 
-                        if isinstance(arg, type) and issubclass(arg, Config):
-                            self.__config = arg.load(self) # type: ignore
+            return None
+        
+        config_type = extract_base_type(hints.get("config"), Config)
+        persistent_type = extract_base_type(hints.get("persistent"), Persistent)
 
-                        elif isinstance(arg, type) and issubclass(arg, Persistent):
-                            self.persistent = arg.load(self) # type: ignore
+        if config_type is not None:
+            self.config = config_type.load(self)
+        else:
+            self.config = None
 
-        if not hasattr(self, "persistent"):
+        if persistent_type is not None:
+            self.persistent = persistent_type.load(self)
+        else:
             self.persistent = Persistent.load(self)
 
     
@@ -144,7 +161,7 @@ class Plugin(Generic[C, P]):
         
         cmd_copy = copy.copy(command)
 
-        original_fallback = getattr(command, "_Command__fallback")
+        original_fallback = getattr(command, "_fallback")
 
         if inspect.ismethod(original_fallback):
             func = original_fallback.__func__
@@ -156,9 +173,9 @@ class Plugin(Generic[C, P]):
         except Exception:
             bound = original_fallback
 
-        setattr(cmd_copy, "_Command__fallback", bound)
+        setattr(cmd_copy, "_fallback", bound)
 
-        original_subs = getattr(command, "_Command__subcommands", [])
+        original_subs = getattr(command, "_subcommands", [])
         new_subs = []
 
         for sub in original_subs:
@@ -167,7 +184,7 @@ class Plugin(Generic[C, P]):
             else:
                 new_subs.append(sub)
 
-        setattr(cmd_copy, "_Command__subcommands", new_subs)
+        setattr(cmd_copy, "_subcommands", new_subs)
 
         return cmd_copy
 
@@ -182,16 +199,16 @@ class Plugin(Generic[C, P]):
         Plugin name
         """
 
-        return self.__metadata["name"]
+        return self._metadata["name"]
 
 
     @property
-    def version(self) -> str:
+    def version(self) -> Version:
         """
         Plugin version
         """
 
-        return self.__metadata["version"]
+        return Version.from_string(self._metadata["version"])
 
     
     @property
@@ -200,47 +217,38 @@ class Plugin(Generic[C, P]):
         Plugin description
         """
         
-        return self.__metadata["description"]
+        return self._metadata["description"]
 
     
     @property
-    def manager(self) -> "PluginManager":
+    def manager(self) -> PluginManager:
         """
         Plugin manager
         """
 
-        return self.__manager
+        return self._manager
     
 
     @property
-    def lang(self) -> Optional["Lang"]:
+    def lang(self) -> Optional[Lang]:
         """
         Plugin lang
         """
 
-        return self.__lang
+        return self._lang
     
 
     @property
-    def config(self) -> Optional[Type[C]]:
-        """
-        Plugin config, if any
-        """
-
-        return self.__config
-    
-
-    @property
-    def server(self) -> "Server":
+    def server(self) -> Server:
         """
         Server instance that is running this instance
         """
         
-        return self.__server
+        return self._server
     
 
     @property
-    def servers(self) -> List["Server"]:
+    def servers(self) -> List[Server]:
         """
         All the Server istances that are running this plugin.
 
@@ -258,12 +266,12 @@ class Plugin(Generic[C, P]):
     
 
     @property
-    def events(self) -> Dict["Event", List[Callable]]:
+    def events(self) -> Dict[Event, List[Callable]]:
         """
         Plugin events
         """
 
-        return self.__events
+        return dict(self._events)
     
     
     @property
@@ -272,7 +280,7 @@ class Plugin(Generic[C, P]):
         Plugins commands
         """
 
-        return self.__commands
+        return list(self._commands)
 
     
     @property
@@ -281,7 +289,8 @@ class Plugin(Generic[C, P]):
         Threads this plugin currently runs
         """
 
-        return self.__running_processes
+        return list(self._running_processes)
+    
     
     @property
     def path(self) -> Path:
@@ -306,6 +315,8 @@ class Plugin(Generic[C, P]):
 
                 return self._search_command_recursively(subcommand, sub_names[1:])
 
+        return None
+
     
     def get_command_named(self, name: str, *sub_names: str) ->  Optional[Command]:
         """
@@ -316,26 +327,28 @@ class Plugin(Generic[C, P]):
         E.g: `configs modify reset` -> `get_command_named("config", "modify", "reset")`
         """
 
-        for command in self.__commands:
+        for command in self._commands:
             if name in command.names:
 
                 if len(sub_names) == 0:
                     return command
                 
-                return self._search_command_recursively(command, sub_names)
+                return self._search_command_recursively(command, sub_names) # type: ignore
+
+        return None
     
 
     def on_load(self) -> None:
         """
         This method is called once this plugin has been created.
 
-        You should overwrite this instead of __init__()
+        You should overwrite this instead of `__init__()`
         """
 
     
     def _about_to_stop(self) -> None:
         """
-        Stops the running processes of this plugin and calls about_to_stop()
+        Stops the running processes of this plugin and calls `about_to_stop()`
         """
 
         try:
@@ -343,7 +356,7 @@ class Plugin(Generic[C, P]):
         except:
             pass
 
-        for process in self.__running_processes:
+        for process in self._running_processes:
 
             if process.process.is_alive():
                 process.process.terminate()
@@ -397,14 +410,17 @@ class Plugin(Generic[C, P]):
     def run_process(
         self,
         fn: Callable[[Any], T],
-        args: Iterable[Any]=(),
-        kwargs: Optional[Mapping[str, Any]]=None,
+        args: Iterable[Any] = (),
+        kwargs: Optional[Mapping[str, Any]] = None,
         *,
-        force_stop_after_secs: Optional[float]=None
+        force_stop_after_secs: Optional[float] = None
     ) -> None:
         """
         Runs the given function in a process
         """
+
+        if kwargs is None:
+            kwargs = {}
         
         p = multiprocessing.Process(
             target=fn,
@@ -420,7 +436,7 @@ class Plugin(Generic[C, P]):
         if force_stop_after_secs is not None:
             stop_time = now + datetime.timedelta(seconds=force_stop_after_secs)
         
-        self.__running_processes.append(
+        self._running_processes.append(
             PluginProcess(
                 process=p,
                 start_time=now,
@@ -442,7 +458,7 @@ class Plugin(Generic[C, P]):
         return True
     
 
-    def _get_command_completion(self, cmd: List[str], ctx: "Context") -> List[str]:
+    def _get_command_completion(self, cmd: List[str], ctx: Context) -> List[str]:
         
         command_completions = []
 

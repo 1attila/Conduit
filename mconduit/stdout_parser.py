@@ -1,13 +1,13 @@
-from typing import Optional, List, Tuple, Dict, TYPE_CHECKING
-import parse
+from typing import Optional, List, Tuple, Dict, Any, TYPE_CHECKING
+import parse # type: ignore[import-untyped]
 import json
 import os
 
-from .event import Event
+from mconduit.event import Event
 
 if TYPE_CHECKING:
-    from .server_runner import ServerRunner
-    from .server import Server
+    from mconduit.server_runner import ServerRunner
+    from mconduit.server import Server
 
 
 PLAYER_NOT_SUPPORTED = "Player is not supported for this event!"
@@ -22,7 +22,7 @@ class ParsedResult:
     server: "Server"
     event: Event
     player: str
-    infos: Optional[Dict]
+    infos: Dict[str, Any]
 
 
     def __init__(
@@ -31,14 +31,14 @@ class ParsedResult:
         server: "Server",
         event: Event,
         player: str,
-        infos: Optional[Dict]=None
+        **kwargs
     ) -> None:
         
         self.time = time
         self.server = server
         self.event = event
         self.player = player
-        self.infos = infos
+        self.infos = kwargs
 
 
 class StdoutParser:
@@ -46,9 +46,9 @@ class StdoutParser:
     Parses all the process stdout
     """
 
-    __death_messages: List[str]
-    __player_actions: List[str]
-    __runner: "ServerRunner"
+    _death_messages: List[str]
+    _player_actions: List[str]
+    _runner: "ServerRunner"
 
 
     def __init__(
@@ -56,17 +56,17 @@ class StdoutParser:
         runner: "ServerRunner"
     ) -> None:
 
-        self.__runner = runner
+        self._runner = runner
         
         with open(os.path.join("resources", "death_messages.json")) as f:
 
             data = json.load(f)
-            self.__death_messages = data["death_messages"]
+            self._death_messages = data["death_messages"]
 
         with open(os.path.join("resources", "player_actions.json")) as f:
 
             data = json.load(f)
-            self.__player_actions = data["player_actions"]
+            self._player_actions = data["player_actions"]
 
 
     def __call__(self, line: str) -> Optional[ParsedResult]:
@@ -74,7 +74,7 @@ class StdoutParser:
         line = line.strip()
         
         if not line.__contains__("[Server thread/INFO]: "):
-            return # type: ignore
+            return None
         
         data = parse.parse(r"[{h}:{m}:{s}] [Server thread/INFO]: [Not secure] {line}", line)
         
@@ -83,7 +83,7 @@ class StdoutParser:
             data = parse.parse(r"[{h}:{m}:{s}] [Server thread/INFO]: {line}", line)
 
             if not data:
-                return # type: ignore
+                return None
         
         line = data["line"]
         time = (data["h"], data["m"], data["s"])
@@ -93,6 +93,8 @@ class StdoutParser:
 
         if server_action := self.process_server_actions(time, line):
             return server_action
+
+        return None
         
 
     def process_player_actions(
@@ -101,7 +103,7 @@ class StdoutParser:
         line: str
     ) -> Optional[ParsedResult]:
         
-        server = self.__runner.server
+        server = self._runner.server
 
         if line.startswith("["):
             
@@ -110,33 +112,35 @@ class StdoutParser:
 
         if data := parse.parse(r"<{player}> {message}", line):
 
-            msg = data["message"]
+            msg: str = data["message"]
 
-            if msg.startswith(self.__runner.handler.command_prefix):
-                return ParsedResult(time, server, Event.PlayerCommand, data["player"], {"cmd": msg})
+            if msg.startswith(self._runner.handler.command_prefix):
+                return ParsedResult(time, server, Event.PLAYER_COMMAND, data["player"], message=msg)
 
-            return ParsedResult(time, server, Event.PlayerChat, data["player"], {"msg": msg})
+            return ParsedResult(time, server, Event.PLAYER_CHAT, data["player"], message=msg)
 
         if data := parse.parse(r"{player} joined the game", line):
-            return ParsedResult(time, server, Event.PlayerJoin, data["player"])
+            return ParsedResult(time, server, Event.PLAYER_JOIN, data["player"])
 
         if data := parse.parse(r"{player} left the game", line):
-            return ParsedResult(time, server, Event.PlayerLeft, data["player"])
+            return ParsedResult(time, server, Event.PLAYER_LEFT, data["player"])
 
         if data := parse.parse(r"[{player}: Triggered [{trigger}]]", line):
-            return ParsedResult(time, server, Event.PlayerTrigger, data["player"], {"trigger": data["trigger"]})
+            return ParsedResult(time, server, Event.PLAYER_TRIGGER, data["player"], message=data["trigger"])
 
         if data := parse.parse(r"{player} has made the advancement [{advancement}]", line):
-            return ParsedResult(time, server, Event.PlayerAdvancement, data["player"], {"advancement": data["advancement"]})
+            return ParsedResult(time, server, Event.PLAYER_ADVANCEMENT, data["player"], advancement=data["advancement"])
 
         if data := parse.parse(r"{player} has completed the challenge [{challenge}]", line):
-            return ParsedResult(time, server, Event.PlayerChallenge, data["player"], {"challenge": data["challenge"]})
+            return ParsedResult(time, server, Event.PLAYER_CHALLENGE, data["player"], message=data["challenge"])
 
-        for death_message in self.__death_messages:
+        for death_message in self._death_messages:
             
             if data:= parse.parse(r"{player}" + death_message, line):
-                return ParsedResult(time, server, Event.PlayerDeath, data["player"], {"msg": death_message})
-            
+                return ParsedResult(time, server, Event.PLAYER_DEATH, data["player"], message=death_message)
+        
+        return None
+
     
     def process_misc_actions(
         self,
@@ -146,32 +150,41 @@ class StdoutParser:
     ) -> Optional[ParsedResult]:
         
         if data := parse.parse(r"[{player1}: Made {player2} a server operator]", line):
-            return ParsedResult(time, server, Event.PlayerOpped, data["player1"], {"other_player": data["player2"]})
+            return ParsedResult(time, server, Event.PLAYER_OPPED, data["player1"], other_player=data["player2"])
 
         if data := parse.parse(r"[{player1}: Made {player2} no longer a server operator]", line):
-            return ParsedResult(time, server, Event.PlayerDeopped, data["player1"], {"other_player": data["player2"]})
+            return ParsedResult(time, server, Event.PLAYER_DEOPPED, data["player1"], other_player=data["player2"])
 
         if data := parse.parse(r"[{player1}: Added {player2} to the whitelist]", line):
-            return ParsedResult(time, server, Event.PlayerWhitelisted, data["player1"], {"other_player": data["player2"]})
+            return ParsedResult(time, server, Event.PLAYER_WHITELISTED, data["player1"], other_player=data["player2"])
 
         if data := parse.parse(r"[{player1}: Removed {player2} from the whitelist]", line):
-            return ParsedResult(time, server, Event.PlayerUnwhitelisted, data["player1"], {"other_player": data["player2"]})
+            return ParsedResult(time, server, Event.PLAYER_UNWHITELISTED, data["player1"], other_player=data["player2"])
 
         if data := parse.parse(r"[{player1}: Kicked {player2}: {reason}]", line):
-            return ParsedResult(time, server, Event.PlayerKicked, data["player1"], {"other_player": data["player2"]})
+            return ParsedResult(time, server, Event.PLAYER_KICKED, data["player1"], other_player=data["player2"])
         
         if data := parse.parse(r"[{player1}: Set [{scoreboard}] for {player2} to {value}]", line):
-            return ParsedResult(time, server, Event.SetScoreboardValue, data["player1"], {"other_player": data["player2"], "scoreboard": data["scoreboard"], "value": data["value"]})
+            return ParsedResult(time, server, Event.SET_SCOREBOARD_VALUE, data["player1"], other_player=data["player2"], scoreboard=data["scoreboard"], value=data["value"])
 
         if data := parse.parse(r"[{player1}: Added {amount} to [{scoreboard}] for {player2} (now {value})]", line):
-            return ParsedResult(time, server, Event.AddScoreboardValue, data["player1"], {"other_player": data["player2"], "scoreboard": data["scoreboard"], "value": data["value"], "amount": data["amount"]})
+            return ParsedResult(time, server, Event.ADD_SCOREBOARD_VALUE, data["player1"], other_player=data["player2"], scoreboard=data["scoreboard"], value=data["value"], amount=data["amount"])
 
         if data := parse.parse(r"[{player1}: Removed {amount} from [{scoreboard}] for {player2} (now {value})]", line):
-            return ParsedResult(time, server, Event.SubScoreboardValue, data["player1"], {"other_player": data["player2"], "scoreboard": data["scoreboard"], "value": data["value"], "amount": data["amount"]})
+            return ParsedResult(time, server, Event.SUB_SCOREBOARD_VALUE, data["player1"], other_player=data["player2"], scoreboard=data["scoreboard"], value=data["value"], amount=data["amount"])
         
         if data := parse.parse(r"[{player1}: Reset [{scoreboard}] for {player2}]", line):
-            return ParsedResult(time, server, Event.ResetScoreboardValue, data["player1"], {"other_player": data["player2"], "scoreboard": data["scoreboard"]})
+            return ParsedResult(time, server, Event.RESET_SCOREBOARD_VALUE, data["player1"], other_player=data["player2"], scoreboard=data["scoreboard"])
         
+        if data := parse.parse(r"[{player1}: Saved the game]", line):
+
+            player1 = data["player1"]
+
+            if player1 == "Rcon":
+                return ParsedResult(time, server, Event.GAME_SAVED, PLAYER_NOT_SUPPORTED)
+
+            return ParsedResult(time, server, Event.PLAYER_SAVED_THE_GAME, player1)
+
         if data := parse.parse(r"[{player1}: Gave {n} [item] to {player2}]", line):
             ...
 
@@ -183,6 +196,9 @@ class StdoutParser:
 
         if data := parse.parse(r"[{player1}: Killed {player2}]", line):
             ...
+
+        return None
+        
     
     def process_server_actions(
         self,
@@ -191,10 +207,12 @@ class StdoutParser:
     ) -> Optional[ParsedResult]:
 
         if data := parse.parse(r'Done ({time}s)! For help, type "help"', line):
-            return ParsedResult(time, self.__runner.server, Event.ServerStart, PLAYER_NOT_SUPPORTED, {"loading_time": data["time"]})
+            return ParsedResult(time, self._runner.server, Event.SERVER_START, PLAYER_NOT_SUPPORTED)
         
         if line == "Stopping server":
-            return ParsedResult(time, self.__runner.server, Event.ServerStop, PLAYER_NOT_SUPPORTED)
+            return ParsedResult(time, self._runner.server, Event.SERVER_STOP, PLAYER_NOT_SUPPORTED)
 
-        if line == "Saved the world":
-            return ParsedResult(time, self.__runner.server, Event.GameSaved, PLAYER_NOT_SUPPORTED)
+        if line == "Saved the game":
+            return ParsedResult(time, self._runner.server, Event.GAME_SAVED, PLAYER_NOT_SUPPORTED)
+
+        return None

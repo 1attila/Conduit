@@ -82,3 +82,13 @@ You didnt accept EULA:
   "You didnt accept EULA"
 You must accept EULA to run the server!:
   "You must accept EULA to run the server!"
+From singleplayer:
+  "From singleplayer"
+Create a server from a singleplayer world:
+  "Create a server from a singleplayer world"
+Server from singleplayer:
+  "Server from singleplayer"
+Invalid directory:
+  "Invalid directory"
+The given directory does not exist!:
+  "The given directory does not exist!"

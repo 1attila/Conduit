@@ -25,13 +25,13 @@ class SingleOption(BaseInput):
         key: str,
         label: Text,
         *,
-        label_visible: bool=True,
-        width: int=200,
+        label_visible: bool = True,
+        width: int = 200,
         options: List[Option]
-    ) -> "SingleOption":
+    ) -> None:
         
         super().__init__(
-            type=InputType.SingleOption,
+            type=InputType.SINGLE_OPTION,
             key=key,
             label=label
         )

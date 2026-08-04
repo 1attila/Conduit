@@ -1,11 +1,11 @@
 from typing import List, Optional, TYPE_CHECKING
 import datetime
-import parse
+import parse # type: ignore[import-untyped]
 
-from ..event import Event, EventListener
+from mconduit.event import Event, EventListener
 
 if TYPE_CHECKING:
-    from ..server import Server
+    from mconduit.server import Server
 
 
 class ScoreboardTracker(EventListener):
@@ -30,7 +30,7 @@ class TextScoreboardTracker(ScoreboardTracker):
 
     def tick(self) -> None:
 
-        for player in self.server.get_online_players():
+        for player in self.server.online_players:
 
             score = self.server.execute(f"/scoreboard players get {player} {self.scoreboard_name}")
             
@@ -45,6 +45,8 @@ class TextScoreboardTracker(ScoreboardTracker):
                     # self._run_fallbacks(
                     #     Context(player, (date.hour, date.minute, date.second), self.server, Event.TextClick)
                     # )
+
+        return None
 
 
 def generate_text_scoreboard(server: "Server") -> str:
@@ -86,6 +88,8 @@ def generate_text_scoreboard(server: "Server") -> str:
         server.execute(f'/scoreboard objectives add {s_name} dummy "{s_name}"')
 
         return s_name
+
+    raise RuntimeError("Unable to parse output of /scoreboard objectives list")
     
 
 def get_latest_scoreboard_id(server: "Server", scoreboard_name: str) -> int:
@@ -115,6 +119,8 @@ def get_latest_scoreboard_id(server: "Server", scoreboard_name: str) -> int:
                 text_ids.append(int(scoreboard[len(scoreboard_name)+1:-1]))
         
         return max(text_ids, default=-1) + 1
+
+    raise RuntimeError("Unable to parse output of /scoreboard objective list")
 
 
 def get_latest_trigger_id(server: "Server", trigger_name: str) -> int:
@@ -192,5 +198,10 @@ def get_score(server: "Server", player: str, objective: str) -> Optional[float]:
 
     value = server.execute(f"/scoreboards players get {player} {objective}")
 
-    if parsed := parse.parse(r"{player} has {score} [{scoreboard-id}]"):
+    if value is None and isinstance(value, str):
+        return None
+
+    if parsed := parse.parse(r"{player} has {score} [{scoreboard-id}]", value):
         return float(parsed["score"])
+
+    return None

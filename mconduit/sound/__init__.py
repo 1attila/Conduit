@@ -2,8 +2,8 @@
 Sound utilities
 """
 
-from .sound import Sound
-from .ffmpeg import (
+from mconduit.sound.sound import Sound
+from mconduit.sound.ffmpeg import (
     ffmpeg,
     ffprobe,
     extract_sound_segment,
@@ -11,7 +11,7 @@ from .ffmpeg import (
     convert_to_ogg,
     InvalidSoundExtension
 )
-from .sounds import (
+from mconduit.sound.sounds import (
     ambient,
     block,
     enchant,

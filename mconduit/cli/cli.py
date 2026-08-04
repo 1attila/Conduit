@@ -1,18 +1,26 @@
 from typing import Union, Optional, TYPE_CHECKING
+from prompt_toolkit.shortcuts import print_formatted_text
+from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit import PromptSession
+import traceback
 import threading
 import os
 
-from .cli_suggester import ConduitCompleter
-from ..utils.errors import get_last_error
-from .logo import print_logo
-from ..lang.lang import Lang
-from ..constants import *
+from mconduit.cli.cli_suggester import ConduitCompleter
+from mconduit.utils.errors import get_last_error
+from mconduit.cli.logo import print_logo, apply_gradient_horizontal
+from mconduit.lang.lang import Lang
+from mconduit.text import Text
+from mconduit.text.formatted_text import to_formatted_text
+from mconduit.constants import *
 
 if TYPE_CHECKING:
-    from ..handler import Handler
-    from ..server import Server
-    from ..plugin_manager import PluginManager
+    from mconduit.handler import Handler
+    from mconduit.server import Server
+    from mconduit.plugin_manager import PluginManager
+
+
+PREFIX = apply_gradient_horizontal("Conduit > ", "#8A2BE2", "#00FFFF")
 
 
 class Cli:
@@ -20,13 +28,15 @@ class Cli:
     Command Line Interface for Conduit
     """
 
-    __handler: "Handler"
-    __lang: "Lang"
-    __running: bool
-    __gui: bool
-    __reload_flag: bool
-    __stop_event: threading.Event
-    __prompt_session: Optional[PromptSession]
+    _handler: "Handler"
+    _lang: "Lang"
+    _running: bool
+    _gui: bool
+    _reload_flag: bool
+    _stop_event: threading.Event
+    _prompt_session: Optional[PromptSession]
+    _lock: threading.Lock
+    _cli_thread: Optional[threading.Thread]
 
 
     def __init__(
@@ -34,41 +44,71 @@ class Cli:
         stop_event: threading.Event,
         handler: "Handler",
         lang: "Lang",
-        gui: bool=False,
-        reload: bool=False
+        gui: bool = False,
+        reload: bool = False
     ) -> None:
 
-        self.__handler = handler
-        self.__lang = lang
-        self.__running = True
-        self.__gui = gui
-        self.__reload_flag = reload
-        self.__stop_event = stop_event
-
-        if self.__gui:
-            ...
-
-        else:
-            self.__prompt_session = PromptSession("> ", completer=ConduitCompleter.build(self.__handler))
+        self._handler = handler
+        self._lang = lang
+        self._running = True
+        self._gui = gui
+        self._reload_flag = reload
+        self._stop_event = stop_event
+        self._lock = threading.Lock()
+        self._cli_thread = None
+        self._prompt_session = None
 
         
     @property
     def has_gui(self) -> bool:
-        return self.__gui
+        return self._gui
     
 
-    def out(self, *values: object, sep: Optional[str]=" ", end: Optional[str]="\n") -> None:
+    def out(
+        self,
+        *values: object,
+        sep: Optional[str] = " ",
+        end: Optional[str] = "\n"
+    ) -> None:
         """
         Outputs something to the console
         """
         
-        with threading.Lock(): # Using lock only here because this is the ONLY function that should be called from outside
+        with self._lock: # Using lock only here because this is the ONLY function that should be called from outside
+
+            if len(values) == 1:
+
+                value = values[0]
+
+                if isinstance(value, Text):
+                    print_formatted_text(to_formatted_text(value))
+                    return
 
             if not self.has_gui:
-                print(*values, sep, end)
+                print(*values, sep=sep, end=end)
 
             else:
                 raise NotImplementedError
+
+    
+    def start(self) -> None:
+        """
+        Starts the CLI in a background thread
+        """
+
+        if not self.has_gui:
+
+            self._prompt_session = PromptSession(
+                PREFIX,
+                completer=ConduitCompleter.build(self._handler),
+                complete_while_typing=True
+            )
+
+            self._cli_thread = threading.Thread(
+                target=self._console_loop_thread,
+                name="Conduit-CLI-Thread"
+            )
+            self._cli_thread.start()
 
     
     def _stop(self) -> None:
@@ -76,40 +116,45 @@ class Cli:
         Stops the Cli, if any
         """
 
-        self.__running = False
+        self._running = False
 
-        if self.__prompt_session is not None:
+        if self._prompt_session is not None:
 
             try:
-                self.__prompt_session.app.exit()
+                self._prompt_session.app.exit()
             except:
                 pass
 
 
     def _console_loop_thread(self) -> None:
         """
-        Reads console input in loop on the main thread
+        Reads console input in loop in background
         """
 
-        if self.__reload_flag:
+        if self._reload_flag:
             self.out("Conduit has been reloaded sucesfully!")
 
         else:
             print_logo()
+
+        self.out() # Leave a blank line
         
         try:
-            while not self.__stop_event.is_set() and self.__running:
-                try:
-                    user_prompt = self.__prompt_session.prompt("> ", completer=ConduitCompleter.build(self.__handler)) # type: ignore
 
-                    if user_prompt:
-                        self(user_prompt)
+            with patch_stdout():
 
-                except EOFError:
-                    break
+                while not self._stop_event.is_set() and self._running:
+                    try:
+                        user_prompt = self._prompt_session.prompt() # type: ignore
+
+                        if user_prompt:
+                            self(user_prompt)
+
+                    except EOFError:
+                        break
                 
         except KeyboardInterrupt:
-            self.__running = False
+            self._running = False
         
         self.out("Closing Conduit CLI")
 
@@ -120,13 +165,29 @@ class Cli:
         return """
         Conduit CLI commands:
 
-        - <server-name>.get-online-players
-        - <server-name>.set-language <lang-path>
+        - <server-name> set-language <lang-path>
+        - <server-name> list-plugins
+        - <server-name> load-plugin <plugin-name>
+        - <server-name> unload-plugin <plugin-name>
+        - <server-name> download-plugin <plugin-name>
+        - <server-name> update-plugin <plugin-name>
 
         You can read servers/handler attributes by doing:
         - <server-name/handler>.<attribute-name>
-        Or modify it (if it's allowed) by doing:
+
+        E.g:
+        - <server-name> online-players
+        - <server-name> lang
+        - <server-name> version
+        - <server-name> motd
+        - <server-name> view-distance
+
+        Or modify them (if it's allowed) by doing:
         - <server-name/handler>.<attribute-name> = <new-value>
+
+        E.g:
+        - <server-name> motd = Conduit server
+
         For more infos go to https://github.com/1attila/Conduit
         """
 
@@ -137,8 +198,8 @@ class Cli:
         """
 
         self.out("Reloading Conduit...")
-        self.__running = False
-        self.__handler.reload()
+        self._running = False
+        self._handler.reload()
     
 
     def __stop(self) -> None:
@@ -146,7 +207,7 @@ class Cli:
         Stops Conduit
         """
         
-        self.__handler._stop()
+        self._handler._stop()
 
     
     def __download_plugin(self, plugin_name: str, manager: "PluginManager") -> None:
@@ -159,7 +220,7 @@ class Cli:
             self.out(f"Plugin {plugin_name} has been downloaded sucesfully!")
 
         except Exception as e:
-            self.out(str(type(e).__name__))
+            traceback.print_exc()
         
     
     def __update_plugin(self, plugin_name: str, manager: "PluginManager") -> None:
@@ -172,7 +233,7 @@ class Cli:
             self.out(f"Plugin {plugin_name} has been updated sucesfully!")
 
         except Exception as e:
-            self.out(str(type(e).__name__)) 
+            traceback.print_exc()
 
     
     def __load_plugin(self, plugin_name: str, manager: "PluginManager") -> None:
@@ -185,7 +246,7 @@ class Cli:
             self.out(f"Plugin {plugin_name} loaded sucesfully!")
 
         except Exception as e:
-            self.out(str(type(e).__name__))
+            traceback.print_exc()
     
 
     def __unload_plugin(self, plugin_name: str, manager: "PluginManager") -> None:
@@ -198,7 +259,7 @@ class Cli:
             self.out(f"Plugin {plugin_name} unloaded sucesfully!")
 
         except Exception as e:
-            self.out(str(type(e).__name__))
+            traceback.print_exc()
 
     
     def __reload_plugin(self, plugin_name: str, manager: "PluginManager") -> None:
@@ -211,7 +272,7 @@ class Cli:
             self.out(f"Plugin {plugin_name} has been reloaded sucesfully!")
 
         except Exception as e:
-            self.out(str(type(e).__name__))
+            traceback.print_exc()
 
     
     def __list_downloaded_plugins(self) -> None:
@@ -274,14 +335,14 @@ class Cli:
             attr = attr[:-1].strip()
             value = value.strip()
 
-            if type(obj).__name__ == "Server" and obj.config.high_permissions is False:
+            if isinstance(obj, Server) and obj.config.high_permissions is False:
                 self.out(f"{obj.name} config dont allow to modify attributes")
                 return True
             
             if hasattr(obj, attr):
                 
                 setattr(obj, attr, value)
-                Set = self.__lang["Set"]
+                Set = self._lang["Set"]
 
                 if hasattr(obj, "name"):
                     self.out(f"{Set} {obj.name}.{attr} = {value}")
@@ -292,7 +353,7 @@ class Cli:
                 
         elif hasattr(obj, command) or "." in command:
             
-            command = command.strip().split(".")
+            command = command.strip().split(".") # type: ignore
             temp_var = obj
 
             for cmd in command:
@@ -348,33 +409,33 @@ class Cli:
                     self.out(e)
                     return
             
-            if self.__handle_attributes(command, self.__handler) is True:
+            if self.__handle_attributes(command, self._handler) is True:
                 return
             
             elif command.startswith("set-language"):
 
                 lang = command[13:]
-                self.__handler.set_lang(lang.strip())
+                self._handler.set_lang(lang.strip())
 
-                self.out(self.__lang["Language is now set to"] + " " + command.strip())
+                self.out(self._lang["Language is now set to"] + " " + command.strip())
                 return
             
             elif command.startswith("download-plugin"):
                 
                 plugin = command[16:].strip()
-                self.__download_plugin(plugin, self.__handler.servers[0].plugin_manager)
+                self.__download_plugin(plugin, self._handler.servers[0].plugin_manager)
                 return
 
             elif command.startswith("update-plugin"):
                 
                 plugin = command[14:].strip()
-                self.__update_plugin(plugin, self.__handler.servers[0].plugin_manager)
+                self.__update_plugin(plugin, self._handler.servers[0].plugin_manager)
                 return
 
-            self.__handler.to_all_servers(lambda s: s.execute(command))
+            self._handler.to_all_servers(lambda s: s.execute(command))
 
         else:
-            for server in self.__handler.servers:
+            for server in self._handler.servers:
                 for name in server.names:
 
                     if prompt.startswith(name):
@@ -389,7 +450,7 @@ class Cli:
                             # "stop": server.stop,
                             "list-plugins": lambda: self.__list_plugins(server.plugin_manager),
                             "get-online-players": lambda: (
-                                str([p._name for p in server.get_online_players()]) or "[]"
+                                str([p for p in server.online_players]) or "[]"
                             )
                         }
 
@@ -412,7 +473,7 @@ class Cli:
                             command = command[13:]
 
                             if server.set_lang(command.strip()):
-                                self.out(server.name, self.__lang["Language is now set to"] + " " + command.strip())
+                                self.out(server.name, self._lang["Language is now set to"] + " " + command.strip())
                             
                             return
                         

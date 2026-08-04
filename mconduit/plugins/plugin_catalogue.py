@@ -6,17 +6,21 @@ import subprocess
 import threading
 import datetime
 import requests
+import logging
 import zipfile
 import json
 import sys
 import os
 
-from ..constants import PLUGINS_DIR, METADATA_FILENAME, CATALOGUE_URL, ACTIVE_PLUGINS_FILE
-from ..utils.version_checker import is_new_version
+from mconduit.constants import *
+from mconduit.utils.version import is_new_version
 
 if TYPE_CHECKING:
-    from ..handler import Handler
-    from ..server import Server
+    from mconduit.handler import Handler
+    from mconduit.server import Server
+
+
+logger = logging.getLogger(__file__)
 
 
 class PluginCatalogueDownloadError(Exception):
@@ -72,30 +76,27 @@ class PluginCatalogue:
     """
 
 
-    __catalogue_url: str
-    __base_plugin_path: str
-    __plugin_catalogue_cache: PluginCatalogueCache
-    __handler: "Handler"
-    __etag: Optional[str]
-    __lock: threading.RLock
-    __skipped_updates: List[str]
+    _catalogue_url: str
+    _base_plugin_path: str
+    _plugin_catalogue_cache: PluginCatalogueCache
+    _handler: "Handler"
+    _etag: Optional[str]
+    _lock: threading.RLock
 
 
     def __init__(
         self,
         handler: "Handler",
-        catalogue_url: Optional[str]=None,
-        base_plugin_path: Optional[str]=None
+        catalogue_url: Optional[str] = None,
+        base_plugin_path: Optional[str] = None
     ) -> None:
         
-        self.__handler = handler
-        self.__lock = threading.RLock()
-        self.__skipped_updates = []
-        self.__etag = None
+        self._handler = handler
+        self._lock = threading.RLock()
+        self._etag = None
 
-
-        self.__catalogue_url = CATALOGUE_URL if catalogue_url is None else catalogue_url
-        self.__base_plugin_path = "ConduitPlugins-main/plugins/" if base_plugin_path is None else base_plugin_path
+        self._catalogue_url = CATALOGUE_URL if catalogue_url is None else catalogue_url
+        self._base_plugin_path = "ConduitPlugins-main/plugins/" if base_plugin_path is None else base_plugin_path
 
 
     def _update_catalogue_cache(self) -> None:
@@ -109,20 +110,20 @@ class PluginCatalogue:
 
         headers = {}
         
-        if self.__etag:
-            headers["If-None-Match"] = self.__etag
+        if self._etag:
+            headers["If-None-Match"] = self._etag
 
         try:
-            response = requests.get(self.__catalogue_url, headers=headers)
+            response = requests.get(self._catalogue_url, headers=headers)
 
         except:
 
             error = "Unable to fetch catalogue data"
 
             try:
-                self.__handler.cli.out(error)
+                self._handler.cli.out(error)
             except:
-                print(error)
+                logger.error(error)
 
             return
         
@@ -134,26 +135,26 @@ class PluginCatalogue:
             error = "Unable to fetch catalogue data"
 
             try:
-                self.__handler.cli.out(error)
+                self._handler.cli.out(error)
             except:
-                print(error)
+                logger.error(error)
             
             return
 
         if response.status_code == 200:
             
-            self.__plugin_catalogue_cache = PluginCatalogueCache(
+            self._plugin_catalogue_cache = PluginCatalogueCache(
                 update_time = datetime.datetime.now(),
                 file_cache = response.content,
                 latest_versions = {}
             )
 
-            self.__etag = response.headers.get("ETag")
-            self.__plugin_catalogue_cache.latest_versions = self._get_latest_plugins_version()
+            self._etag = response.headers.get("ETag")
+            self._plugin_catalogue_cache.latest_versions = self._get_latest_plugins_version()
             self._check_for_updates()
 
         elif response.status_code == 304:
-            self.__plugin_catalogue_cache.update_time = datetime.datetime.now()
+            self._plugin_catalogue_cache.update_time = datetime.datetime.now()
         else:
             raise PluginCatalogueDownloadError()
 
@@ -165,7 +166,7 @@ class PluginCatalogue:
         
         latest_versions = {}
 
-        with zipfile.ZipFile(BytesIO(self.__plugin_catalogue_cache.file_cache)) as zip_file:
+        with zipfile.ZipFile(BytesIO(self._plugin_catalogue_cache.file_cache)) as zip_file:
 
             metadatas = [m for m in zip_file.namelist() if m.endswith(METADATA_FILENAME)]
 
@@ -187,11 +188,13 @@ class PluginCatalogue:
         except FileNotFoundError:
             return
 
+        missing_updates = self.get_plugins_to_update()
+
         for plugin, latest_version in self.latest_plugin_versions.items():
 
             if plugin in downloaded_plugins:
 
-                if plugin in self.__skipped_updates:
+                if plugin in missing_updates:
                     continue
                 
             try:
@@ -201,20 +204,29 @@ class PluginCatalogue:
             except FileNotFoundError:
                 continue
                     
-            if is_new_version(version, latest_version):
-                self.__handler.to_all_servers(lambda s: s.plugin_manager._try_update_plugin(plugin, latest_version))
+            plugins_to_update = {}
 
+            if is_new_version(version, latest_version):
+
+                self.set_skipped_update(plugin, version, latest_version)
+                plugins_to_update[plugin] = [version, latest_version]
+
+            if len(plugins_to_update) > 0:
+                self._handler.to_all_servers(lambda s: s.plugin_manager._try_update_plugins(plugins_to_update))
     
-    def _download_plugin(self, plugin_name: str) -> None:
+
+    def _download_plugin(self, plugin_name: str) -> Optional[Exception]:
         """
         Downloads a new plugin from the catalogue
         """
 
-        with self.__lock:
+        with self._lock:
 
-            with zipfile.ZipFile(BytesIO(self.__plugin_catalogue_cache.file_cache)) as zip_file:
+            error: Optional[Exception] = None
+
+            with zipfile.ZipFile(BytesIO(self._plugin_catalogue_cache.file_cache)) as zip_file:
             
-                plugin_folder_prefix = f"{self.__base_plugin_path}{plugin_name}/"
+                plugin_folder_prefix = f"{self._base_plugin_path}{plugin_name}/"
                 members = [m for m in zip_file.namelist() if m.startswith(plugin_folder_prefix)]
 
                 if not members:
@@ -242,42 +254,49 @@ class PluginCatalogue:
                                 if member.endswith(METADATA_FILENAME):
                                 
                                     json_metadata = json.loads(src)
-                                    requirements = json_metadata["dependencies"]
+                                    requirements = json_metadata.get("python_dependencies", [])
                                 
                                     if len(requirements) > 0:
                                     
-                                        self.__handler.cli.out("Installing the following packages:", *requirements)
+                                        self._handler.cli.out("Installing the following packages:", *requirements)
 
                                         try:
                                             subprocess.check_call([sys.executable, "-m", "pip", "install", *requirements])
             
                                         except Exception as e:
-                                            raise e
+                                            error = e
+                return error
 
 
-    def download_plugin(self, plugin_name: str) -> None:
+    def download_plugin(
+        self,
+        plugin_name: str,
+        force_download: bool = False
+    ) -> Optional[Exception]:
         """
         Downloads the given plugin, if it's not in the `plugins` folder yet
         """
         
-        with self.__lock:
-
-            if Path(PLUGINS_DIR).joinpath(plugin_name).exists() or plugin_name == "builtin_plugin":
+        with self._lock:
+            
+            if (
+                force_download is False and
+                (Path(PLUGINS_DIR).joinpath(plugin_name).exists() or plugin_name == "builtin_plugin")
+            ):
                 raise PluginAlreadyDownloaded()
-        
-            try:
-                self._download_plugin(plugin_name)
-                self.__handler.telemetry.plugin_download(plugin_name)
-            except Exception as e:
-                raise e
+            
+            error = self._download_plugin(plugin_name)
+            self._handler.telemetry.plugin_download(plugin_name, force_download)
+
+            return error
         
 
-    def update_plugin(self, plugin_name: str) -> None:
+    def update_plugin(self, plugin_name: str) -> Optional[Exception]:
         """
         Updates the given plugin, if its downloaded
         """
 
-        with self.__lock:
+        with self._lock:
 
             if not Path(PLUGINS_DIR).joinpath(plugin_name).exists():
                 raise PluginDoesntExist()
@@ -290,21 +309,23 @@ class PluginCatalogue:
 
             metadata = json.load(open(meta_path))
 
-            if not "version" in metadata.keys():
+            if "version" not in metadata.keys():
                 raise MissingPluginVersion()
         
             current_version = metadata["version"]
 
-            if plugin_name in self.__plugin_catalogue_cache.latest_versions.keys():
+            if plugin_name in self._plugin_catalogue_cache.latest_versions.keys():
 
-                catalogue_version = self.__plugin_catalogue_cache.latest_versions[plugin_name]
+                catalogue_version = self._plugin_catalogue_cache.latest_versions[plugin_name]
 
                 if is_new_version(current_version, catalogue_version):
-                    try:
-                        self._download_plugin(plugin_name)
-                        self.__handler.telemetry.plugin_update(plugin_name, current_version, catalogue_version)
-                    except Exception as e:
-                        raise e
+                    
+                        error = self._download_plugin(plugin_name)
+                        self.remove_skipped_update(plugin_name)
+                        
+                        self._handler.telemetry.plugin_update(plugin_name, current_version, catalogue_version)
+                        
+                        return error
                 else:
                     raise PluginAlreadyUpdated()
             else:
@@ -323,7 +344,7 @@ class PluginCatalogue:
         If value is set to `True`, the server `PluginManager` will load it automatically at every conduit start
         """
 
-        with self.__lock:
+        with self._lock:
 
             with open(ACTIVE_PLUGINS_FILE) as f:
                 active_plugins = json.load(f)
@@ -350,7 +371,7 @@ class PluginCatalogue:
         Fetches these values from  `active_plugins.json` and if the server is missing adds it and returns an empty list
         """
 
-        with self.__lock:
+        with self._lock:
             
             with open(ACTIVE_PLUGINS_FILE, "r") as f:
 
@@ -367,17 +388,6 @@ class PluginCatalogue:
                         json.dump(all_active_plugins, f, indent=4)
 
                     return []
-
-
-    def skip_update(self, plugin_name: str) -> None:
-        """
-        Appends the plugin_name to the list of updates to skip
-        """
-
-        with self.__lock:
-
-            if plugin_name not in self.__skipped_updates:
-                self.__skipped_updates.append(plugin_name)
         
     
     @property
@@ -386,7 +396,7 @@ class PluginCatalogue:
         Entire plugin catalogue cache
         """
 
-        return self.__plugin_catalogue_cache
+        return self._plugin_catalogue_cache
     
 
     @property
@@ -395,7 +405,7 @@ class PluginCatalogue:
         Datetime of the last cache update
         """
 
-        return self.__plugin_catalogue_cache.update_time
+        return self._plugin_catalogue_cache.update_time
     
 
     @property
@@ -404,13 +414,55 @@ class PluginCatalogue:
         Returns a dict that matches every plugin name in the catalogue with it's latest version
         """
 
-        return self.__plugin_catalogue_cache.latest_versions
+        return self._plugin_catalogue_cache.latest_versions
     
 
-    @property
-    def skipped_updates(self) -> List[str]:
+    def get_plugins_to_update(self) -> Dict[str, List[str]]:
         """
-        Skipped plugins updates
+        Fetches the plugins that can be updated
         """
 
-        return self.__skipped_updates
+        with self._lock:
+            
+            try:
+                with open(SKIPPED_UPDATES_FILE) as f:
+
+                    return json.load(f)
+            except:
+                return {}
+
+    
+    def set_skipped_update(
+        self,
+        plugin_name: str,
+        current_version: str,
+        new_version: str
+    ) -> None:
+
+        update = [
+            current_version,
+            new_version
+        ]
+
+        updates = self.get_plugins_to_update()
+        updates[plugin_name] = update
+
+        with self._lock:
+
+            with open(SKIPPED_UPDATES_FILE, "w") as f:
+                json.dump(updates, f, indent=4)
+
+    
+    def remove_skipped_update(self, plugin_name: str) -> None:
+
+        updates = self.get_plugins_to_update()
+
+        try:
+            updates.pop(plugin_name)
+        except:
+            pass
+
+        with self._lock:
+            
+            with open(SKIPPED_UPDATES_FILE, "w") as f:
+                json.dump(updates, f, indent=4)

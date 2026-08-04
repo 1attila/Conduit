@@ -4,11 +4,12 @@ from typing import Optional, List
 from datetime import datetime, timedelta
 from math import floor
 
-from . import plugins
-from . import text
-from .context import Context
-from .__version__ import __version__ as conduit_version
-from .changelog import CHANGELOGS
+from mconduit import plugins
+from mconduit import perms
+from mconduit import text
+from mconduit.context import Context
+from mconduit.__version__ import __version__ as conduit_version
+from mconduit.changelog import CHANGELOGS
 
 
 def plg(plugin_name: str) -> str:
@@ -19,7 +20,66 @@ def plg(plugin_name: str) -> str:
     return plugin_name.replace("-", "_")
 
 
-class BuiltinPlugin(plugins.Plugin[None, None]):
+DIVIDERS = [
+    60 * 60 * 24 * 365,
+    60 * 60 * 24 * 30,
+    60 * 60 * 24 * 7,
+    60 * 60 * 24,
+    60 * 60,
+    60,
+    1
+]
+
+
+def get_timestamps(time: timedelta | float | int) -> List[int]:
+
+    if isinstance(time, timedelta):
+        secs = time.total_seconds()
+    else:
+        secs = time
+
+    return [int(secs / div) for div in DIVIDERS]
+
+
+def format_time(time: timedelta) -> str: #TODO: Abstract into a time-format utility
+
+    timestamps = get_timestamps(time)
+
+    prefixes = ["years", "months", "weeks", "days", "hrs", "mins", "secs"]
+
+    formatted_time = ""
+
+    for i, (timestamp, prefix, div) in enumerate(zip(timestamps, prefixes, DIVIDERS)):
+        
+        if timestamp >= 1:
+            
+            formatted_time = f"{timestamp}{prefix}"
+
+            if i < len(DIVIDERS) - 1:
+                second_bit = get_timestamps(time.total_seconds() - timestamp * div)[i + 1]
+
+                if second_bit >= 1:
+                    formatted_time += f", {second_bit}{prefixes[i + 1]}"
+
+            break
+
+    return formatted_time
+
+
+def time_since_release(release_date: str) -> text.Text:
+
+    now = datetime.now()
+
+    d, m, y = [int(item) for item in release_date.split("/")]
+
+    release_date = datetime(day=d, month=m, year=y)
+
+    formatted_time = format_time(now - release_date)
+
+    return text.dark_aqua(formatted_time + " ago")
+
+
+class BuiltinPlugin(plugins.Plugin):
     """
     Conduit utilities
     """
@@ -29,15 +89,19 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         name="plugin",
         aliases=["plg"]
     )
-    __start_datetime: datetime
+    _start_datetime: datetime
 
 
     def on_load(self):
-        self.__start_datetime = datetime.now()
+        self._start_datetime = datetime.now()
 
     
     @plugins.command
-    def help(self, ctx: Context, args: List[str] | None = None):
+    def help(
+        self,
+        ctx: Context,
+        *args: str
+    ):
         """
         Gives info on the given command/plugin
         """
@@ -47,26 +111,6 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         if args is None:
 
             self._help0(ctx)
-            return
-
-            p = self.manager.command_prefix
-
-            ctx.reply(text.Text("Builtin commands:"))
-            ctx.reply(text.gray(f"{p}help <command/plugin>").hover("Click to paste in chat").click(suggest_command=f"{p}help"))
-            ctx.reply(text.gray(f"{p}version").hover("Click to paste in chat").click(suggest_command=f"{p}version"))
-
-            if ctx.player.permissions >= plugins.Permission.Helper:
-                
-                ctx.reply("Commands with permissions:")
-                ctx.reply(text.gray(f"{p}plugin <load/unload/download/reload/update/list>").hover("Click to paste in chat").click(
-                    suggest_command=f"{p}plugin"
-                ))
-                ctx.reply(text.gray(f"{p}setlang <lang>").hover("Click to paste in chat").click(suggest_command=f"{p}setlang"))
-                ctx.reply(text.gray(f"{p}reload").hover("Click to paste in chat").click(suggest_command=f"{p}reload"))
-
-            else:
-                ctx.reply(text.gray(f"{p}plugin list").hover("Click to paste in chat").click(suggest_command=f"{p}plugin list"))
-
             return
         
         if len(args) == 1:
@@ -78,24 +122,17 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
                 
                 self._help_plugin(ctx, p_name, plg_inst)
 
-        try:
-
-            if len(args) > 0:
-                command = " ".join(args)
+        if len(args) > 0:
+            command = " ".join(args)
             
-            c_doc = self.manager.get_command_help(command)
+        c_doc = self.manager.get_command_help(command)
 
-            if c_doc is not None:
-                ctx.reply(c_doc)
+        if c_doc is not None:
+            ctx.reply(c_doc)
             
-            else:
-                
-                if plg_inst is None:
-                    c_name = " ".join(args)
-                    ctx.reply(text.red(f"Unable to find commands or plugins named `{c_name}`"))
-
-        except Exception as e:
-            ctx.reply(text.red(f"Parsing error: {type(e).__name__}"))
+        elif plg_inst is None:
+            c_name = " ".join(args)
+            ctx.error(f"Unable to find commands or plugins named `{c_name}`")
 
 
     def _useful_commands(self, ctx: Context):
@@ -104,22 +141,30 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         
         ctx.reply("")
         res = text.gold("[USEFUL COMMANDS]\n")
-        res += text.suggester("plugin list", prefix=p).gray() + "\n"
+        res += text.suggester("plugin list", prefix=p).gray().endl()
 
-        if ctx.player.permissions >= plugins.Permission.Helper: # type: ignore
-            res += text.suggester("setlang", prefix=p).gray() + "\n"
-            res += text.suggester("reload", prefix=p).gray() + "\n"
+        if ctx.player.has_permission(perms.Builtin.HELPER): # type: ignore
+            res += text.suggester("setlang", prefix=p).gray().endl()
+            res += text.suggester("reload", prefix=p).gray().endl()
 
-        res += text.suggester("perms", prefix=p).gray() + "\n"
-        res += text.suggester("version", prefix=p).gray() + "\n"
+        res += text.suggester("perms", prefix=p).gray().endl()
+        res += text.suggester("version", prefix=p).gray().endl()
         
         tutorial = self.manager.get_plugin_named("tutorial")
 
         if tutorial is not None:
-            ...
+            
+            res += text.dark_aqua(f"{text.icon.check_mark} is installed!").endl()
+            res += "Type " + text.suggester("help", "tutorial", prefix=p).aqua()
+
         else:
+            
+            download_plugin = self.get_command_named("plugin", "download")
+
             res += text.button(
-                "INSTALL TUTORIAL"
+                f"{text.icon.plus} INSTALL TUTORIAL",
+                show_text=text.aqua("Click to install the tutorial plugin to get better help!"),
+                run_function=lambda c: download_plugin(c, "tutorial")
             ).dark_aqua()
 
         ctx.reply(res)
@@ -135,14 +180,6 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         !!help <command> e.g: !!help plugin list
 
         [USEFUL COMANDS]
-        {
-        !!plg list
-        +{all plugins if opped}
-        !!perms
-        !!version
-        +{tutorial if allowed}
-        +{suggest tutorial if not allowed}
-        }
         """
 
         p = self.manager.command_prefix
@@ -162,8 +199,7 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         help_cmd = text.gray(f"{p}help plugin list\n").underlined()
         help_cmd.hover("Click to paste in chat!")
         help_cmd.click(suggest_command=f"{p}help plugin list")
-        res += help_cmd
-        res += "\n"
+        res += help_cmd.endl()
         
         res += text.button(
             "USEFUL COMMANDS",
@@ -203,7 +239,7 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
                     show_text="Click to see full docs",
                     suggest_command=f"{self.manager.command_prefix}help {command.names[0]}"
                 ).gold()
-                res += "\n"
+                res.endl()
 
         ctx.reply(res)
 
@@ -214,7 +250,19 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         Displays Conduit version
         """
 
-        ctx.info(f"Conduit-v{conduit_version}")
+        msg = f"Conduit-v{conduit_version}"
+
+        release_date = CHANGELOGS.get(conduit_version, None)
+        
+        if release_date is not None:
+
+            release_date = release_date.get("release_date", None)
+
+            if release_date is not None:
+                
+                msg += " • released: " + text.italic(release_date).hover(time_since_release(release_date))
+
+        ctx.info(msg)
 
     
     @_version.command
@@ -223,11 +271,34 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         Lists all Conduit versions up to the current one
         """
 
-        raise NotImplementedError
+        """
+        Conduit versions
+
+        <dot> <v-name (different colors?)> <dot> released italic(<release_date>) 
+        """
+
+        msg = text.gray("Version list:").bold().endl()
+
+        for v_name, v_data in CHANGELOGS.items():
+
+            if v_data["release_date"] == "":
+                continue
+            
+            msg += text.dark_aqua(" • ")
+            msg += text.aqua(v_name)
+            msg += text.dark_aqua(" released: ")
+            msg += text.aqua(v_data["release_date"]).italic().hover(time_since_release(v_data["release_date"]))
+            msg.endl()
+
+        ctx.reply(msg)
 
     
-    @plugins.command
-    def perms(self, ctx: Context, player_name: Optional[str]=None):
+    @plugins.command(name="perms")
+    def perms_command(
+        self,
+        ctx: Context,
+        player_name: Optional[str] = None
+    ):
         """
         Displays the permissions for the given player.
 
@@ -242,7 +313,8 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         ctx.info(f"Player {player_name} has {p} permissions")
 
     
-    @perms.command(checks=[plugins.check_perms(plugins.Permission.Owner)])
+    @perms_command.command
+    @plugins.checks.has_perm(perms.Builtin.ADMIN)
     def set(self, ctx: Context, player_name: str, permission: str):
         """
         Sets the specified permission to the given player
@@ -284,9 +356,10 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         
         ctx.success(f"Permissions for {player_name} have been {action} to {permission}")
         
-
-    @Plugin.command(checks=[plugins.check_perms(plugins.Permission.Helper)])    
-    def download(self, ctx: Context, plugin_name: str):
+    
+    @Plugin.command
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
+    def download(self, ctx: Context, plugin_name: str, force: plugins.Flag):
         """
         Download a plugin from ConduitPlugin GitHub repo
         """
@@ -294,7 +367,7 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         plugin_name = plg(plugin_name)
 
         try:
-            self.manager.download_plugin(plugin_name)
+            self.manager.download_plugin(plugin_name, force)
 
             ask_to_load = text.gray("Do you want to load it?")
             ask_to_load.hover(show_text="Click to load")
@@ -305,8 +378,9 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         except Exception as e:
             ctx.error(e)
 
-    
-    @Plugin.command(checks=plugins.check_perms(plugins.Permission.Helper))
+
+    @Plugin.command
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
     def load(self, ctx: Context, plugin_name: str, not_perm: plugins.Flag):
         """
         Loads a plugin
@@ -320,8 +394,9 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         except Exception as e:
             ctx.error(e)
 
-    
-    @Plugin.command(checks=[plugins.check_perms(plugins.Permission.Helper)])
+
+    @Plugin.command
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
     def unload(self, ctx: Context, plugin_name: str, not_perm: plugins.Flag):
         """
         Unloads a loaded plugin
@@ -336,7 +411,8 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
             ctx.error(e)
 
     
-    @Plugin.command(checks=[plugins.check_perms(plugins.Permission.Helper)])
+    @Plugin.command
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
     def update(self, ctx: Context, plugin_name: str):
         """
         Updates a plugin, if possible
@@ -357,29 +433,47 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
             ctx.error(e)
 
     
-    @Plugin.command(checks=[plugins.check_perms(plugins.Permission.Helper)])
-    def skipupdate(self, ctx: Context, plugin_name: str):
+    @Plugin.command(name="skipped-updates", aliases=["su"])
+    def skipped_updates(self, ctx: Context):
         """
         Skips the updates for the given plugin
         """
 
-        plugin_name = plg(plugin_name)
+        perms_to_update = ctx.player.has_permission(perms.Builtin.HELPER)
 
-        try:
-            self.server.handler.plugin_catalogue.skip_update(plugin_name)
+        skipped_updates = self.server.handler.plugin_catalogue.get_plugins_to_update()
+        
+        if len(skipped_updates) == 0:
+            ctx.info("There is no skipped update!")
+            return
 
-            confirm = text.Text(f"Stopping updates of `{plugin_name}`")
-            confirm.hover(show_text="Click here to update")
-            confirm.click(suggest_command=f"{self.manager.command_prefix} plugin update {plugin_name}")
+        update_plugin = self.get_command_named("plugin", "update")
 
-            ctx.success(confirm)
+        ctx.info(text.bold("Skipped updates").underlined())
 
-        except Exception as e:
-            ctx.error(e)
+        msg = text.Text("")
+    
+        for p_name, (c_version, n_version) in skipped_updates.items():
+
+            msg += text.dark_aqua(" • " + p_name + ": ")
+            msg += text.gold(c_version) + text.dark_aqua( " --> ") + text.green(n_version)
+
+            if perms_to_update is True:
+
+                msg += text.button(
+                    f"{text.icon.plus} Update",
+                    show_text=text.aqua("Click to update it now!"),
+                    run_function=lambda c: update_plugin(c, p_name)
+                ).dark_aqua()
+
+            msg.endl()
+            
+        ctx.reply(msg)
 
     
-    @Plugin.command(checks=[plugins.check_perms(plugins.Permission.Helper)])
-    def reload(self, ctx: Context, plugin_name: str):
+    @Plugin.command(name="reload")
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
+    def plugin_reload(self, ctx: Context, plugin_name: str):
         """
         Reloads a plugin
         """
@@ -393,8 +487,8 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
             ctx.error(e)
 
     
-    @Plugin.command
-    def list(self, ctx: Context, t: plugins.Flag):
+    @Plugin.command(name="list")
+    def plugin_list(self, ctx: Context, t: plugins.Flag):
         """
         Displays loaded plugins
         """
@@ -411,7 +505,11 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
 
     
     @plugins.command
-    def news(self, ctx: Context, version: Optional[str]=None):
+    def news(
+        self,
+        ctx: Context,
+        version: Optional[str] = None
+    ):
         """
         Prints the cangelog of the given Conduit version.
         """
@@ -431,13 +529,16 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
             ctx.error(f"There is no version named `{version}`")
             return
         
-        ctx.info(f"{version} CHANGELOG:\n")
+        release_date = CHANGELOGS[version]["release_date"]
+        ctx.info(f"{version} CHANGELOG: " + text.underlined(release_date).hover(time_since_release(release_date)).endl())
 
         for field, changes in CHANGELOGS[version].items():
             
-            if len(changes) > 0:
+            if field != "release_date" and len(changes) > 0:
                 
-                message = CHANGELOG_COLORS[field](f"{field[0].upper()}{field[1:]}:\n")
+                field_name = field[0].upper() + field[1:]
+
+                message = CHANGELOG_COLORS[field](f"{field_name} ({len(changes)}):\n")
 
                 for change in changes:
                     message += (f"  • {change}\n")
@@ -451,32 +552,31 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         Shows the running time of conduit
         """
 
-        start_date = self.__start_datetime.date()
         current_time = datetime.now()
-        delta: timedelta = current_time - self.__start_datetime
+        delta: timedelta = current_time - self._start_datetime
 
         d = delta.days
         h, remainder = divmod(delta.seconds, 3600)
-        m, s = divmod(remainder, 60)
+        m, _s = divmod(remainder, 60)
 
         uptime_in_days = round(delta.total_seconds() / 86400, 2)
         uptime_in_hours = round(delta.total_seconds() / 3600, 2)
         uptime_in_minutes = floor(delta.total_seconds() / 60)
 
-        start_str = self.__start_datetime.strftime("%Y-%m-%d %H:%M:%S")
+        start_str = self._start_datetime.strftime("%Y-%m-%d %H:%M:%S")
         
         answ = text.dark_aqua("Conduit has been running since ")
         answ += text.aqua(start_str).italic()
         answ += text.dark_aqua(" for a total of ")
-        answ += text.dark_aqua(f"{d} days").hover(show_text=f"{uptime_in_days} days") + ", "
-        answ += text.dark_aqua(f"{h} hours").hover(show_text=f"{uptime_in_hours} hours") + ", "
-        answ += text.dark_aqua(f"{m} minutes").hover(show_text=f"{uptime_in_minutes} minutes")
+        answ += text.dark_aqua(f"{d} days").hover(show_text=text.aqua(f"{uptime_in_days} days")) + ", "
+        answ += text.dark_aqua(f"{h} hours").hover(show_text=text.aqua(f"{uptime_in_hours} hours")) + ", "
+        answ += text.dark_aqua(f"{m} minutes").hover(show_text=text.aqua(f"{uptime_in_minutes} minutes"))
         
         ctx.reply(answ)
 
 
-    @plugins.perms(plugins.Permission.Helper)
     @plugins.command
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
     def setlang(self, ctx: Context, lang: str):
         
         try:
@@ -486,10 +586,10 @@ class BuiltinPlugin(plugins.Plugin[None, None]):
         except Exception as e:
             ctx.error(e)
 
-
-    @plugins.perms(plugins.Permission.Helper)
-    @plugins.command
-    def reload(self, ctx: Context):
+    
+    @plugins.command(name="reload")
+    @plugins.checks.has_perm(perms.Builtin.HELPER)
+    def conduit_reload(self, ctx: Context):
         """
         Reloads Conduit
         """

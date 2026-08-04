@@ -13,13 +13,13 @@ from prompt_toolkit.widgets import Label, Button, Box, Shadow, Frame
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.layout.containers import HSplit, Window, Float, FloatContainer
 
-from ..conduit_config import HandlerConfig
-from .setup_wizard import SetupWizard
-from .logo import get_logo
-from .styles import *
+from mconduit.conduit_config import HandlerConfig
+from mconduit.cli.setup_wizard import SetupWizard
+from mconduit.cli.logo import get_logo
+from mconduit.cli.styles import *
 
 if TYPE_CHECKING:
-    from ..handler import Handler
+    from mconduit.handler import Handler
 
 
 class SelectDirectory:
@@ -178,3 +178,5 @@ class WelcomeScreen:
 
             case _:
                 sys.exit(0)
+
+        return None

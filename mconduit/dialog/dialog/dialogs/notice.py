@@ -29,7 +29,7 @@ class Notice(BaseDialog):
         after_action: AfterAction=AfterAction.NONE,
         *,
         action: Optional[Action]=None
-    ) -> "Notice":
+    ) -> None:
         
         super().__init__(
             type=DialogType.Notice,

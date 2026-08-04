@@ -79,24 +79,24 @@ class Serializable:
 
     def __init__(self) -> None:
         
-        self.__fields = {}
+        self._fields = {}
 
         for k, v in getattr(self, "__annotations__", {}).items():
 
             if type(v) is Field:
-                self.__fields[k] = v
+                self._fields[k] = v
 
     
     def add_field(
         self,
         name: str,
         field: Field
-    ) -> "Serializable":
-        self.__fields[name] = field
+    ) -> None:
+        self._fields[name] = field
 
     
     def get_field(self, field_name: str) -> Optional[Field]:
-        return self.__fields.get(field_name, None)
+        return self._fields.get(field_name, None)
         
 
     def to_dict(self, **kwargs) -> Dict[str, Any]:
@@ -106,7 +106,7 @@ class Serializable:
         
         out = {}
 
-        for field_name, field in self.__fields.items():
+        for field_name, field in self._fields.items():
             
             class NoValue:...
 

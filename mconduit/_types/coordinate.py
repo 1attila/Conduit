@@ -6,7 +6,11 @@ from .vec3d import Vec3d
 Coordinate: TypeAlias = str | Vec3d
 
 
-def relative(offset_x: float=0, offset_y: float=0, offset_z: float=0) -> str:
+def relative(
+    offset_x: float = 0,
+    offset_y: float = 0,
+    offset_z: float = 0
+) -> str:
     """
     Return a string that can be used in commands to indicate the coordinates of where the command is executed plus the given offset.
 

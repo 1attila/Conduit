@@ -6,6 +6,7 @@ __pycache__/
 .venv/
 .mypy_cache/
 .ruff_cache/
+.pytest_cache/
 *.pyc
 
 # pypi
@@ -17,9 +18,10 @@ __pycache__/
 /venv/
 
 # Conduit
+skipped_updates.json
 active_plugins.json
 command_cache.json
-config.json
+*config.json
 perms.json
 /plugins
 /resources

@@ -32,7 +32,7 @@ VERSION = version["__version__"]
 with open(here.joinpath(here, "requirements.txt")) as f:
 	REQUIRED = list(filter(None, map(str.strip, f)))
 
-with open(here.joinpath(here, "PYPI_README.md")) as f:
+with open(here.joinpath(here, "PYPI_README.md"), encoding="utf-8") as f:
 	LONG_DESCRIPTION = f.read()
 
 setup(

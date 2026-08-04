@@ -3,7 +3,7 @@ import subprocess
 import sys
 
 if TYPE_CHECKING:
-    from .handler import Handler
+    from mconduit.handler import Handler
 
 
 class ConduitUpdater:
@@ -12,12 +12,12 @@ class ConduitUpdater:
     """
 
 
-    __handler: "Handler"
+    _handler: "Handler"
 
 
     def __init__(self, handler: "Handler") -> None:
         
-        self.__handler = handler
+        self._handler = handler
 
 
     def check_for_updates(self):
@@ -25,7 +25,12 @@ class ConduitUpdater:
         Tries to updates the conduit package
         """
 
-        result = subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", "mconduit"], capture_output=True, text=True)
+        result = subprocess.run(
+            [sys.executable,
+             "-m", "pip", "install", "--upgrade", "mconduit"
+            ],
+            capture_output=True, text=True
+        )
 
         if "Successfully installed" in result.stdout:
-            self.__handler._reload()
+            self._handler._reload()

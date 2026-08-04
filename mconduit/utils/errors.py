@@ -1,13 +1,14 @@
 from typing import Optional, Dict, Any
+from pathlib import Path
 import traceback
 import textwrap
 import sys
 
-from mconduit import text
+from mconduit import text, constants
 
 
 def clean(text: str) -> str:
-    return textwrap.dedent(text).replace("'", "`").replace('"', "`")
+    return textwrap.dedent(text.strip("\n")).replace("'", "`").replace('"', "`").strip("\n")
 
 
 class ConduitError:
@@ -16,10 +17,10 @@ class ConduitError:
     """
 
 
-    __name: str
-    __info: Optional[str]
-    __docs: Optional[str]
-    __traceback: Optional[Dict[str, Any]]
+    _name: str
+    _info: Optional[str]
+    _docs: Optional[str]
+    _traceback: Optional[Dict[str, Any]]
 
 
     def __init__(
@@ -30,10 +31,10 @@ class ConduitError:
         traceback: Optional[Dict[str, Any]]
     ) -> None:
         
-        self.__name = name
-        self.__info = info
-        self.__docs = docs
-        self.__traceback = traceback
+        self._name = name
+        self._info = info
+        self._docs = docs
+        self._traceback = traceback
 
 
     def __eq__(self, other: object) -> bool:
@@ -41,12 +42,23 @@ class ConduitError:
         if not isinstance(other, ConduitError):
             return False
 
-        return (
-            self.name == other.name and
-            (self.info is not None and (self.info == other.info)) and
-            (self.docs is not None and (self.docs == other.docs)) and
-            (self.traceback is not None and (self.traceback == other.traceback))
-        )
+        if self.name != other.name:
+            return False
+
+        try:
+            if self.info != other.info:
+                return False
+        
+            if self.docs != other.docs:
+                return False
+
+            if self.traceback != other.traceback:
+                return False
+
+        except ValueError:
+            return False
+        
+        return True
 
     
     @property
@@ -55,7 +67,7 @@ class ConduitError:
         Exception name
         """
 
-        return self.__name
+        return self._name
 
 
     @property
@@ -64,7 +76,7 @@ class ConduitError:
         Exception arguments
         """
 
-        return self.__info
+        return self._info
 
 
     @property
@@ -73,7 +85,7 @@ class ConduitError:
         Exception documentation
         """
 
-        return self.__docs
+        return self._docs
 
 
     @property
@@ -87,7 +99,7 @@ class ConduitError:
         - code
         """
 
-        return self.__traceback
+        return self._traceback
 
 
     @staticmethod
@@ -123,7 +135,7 @@ class ConduitError:
         Builds a Json Text that can be used in Minecraft
         """
 
-        disp = f"{clean(self.__name)}"
+        disp = f"{clean(self.name)}"
 
         if self.info is not None:
             disp += f": {clean(self.info)}"
@@ -136,10 +148,25 @@ class ConduitError:
         if self.traceback is not None:
 
             tb = text.dark_red("File: ").bold()
-            tb += text.red(clean(self.traceback["file"])).italic().endl()
+
+            cleaned_path = Path(clean(self.traceback["file"]))
+
+            if constants.PLUGINS_DIR in cleaned_path.parts and "mconduit" not in cleaned_path.parts:
+
+                plugins_dir = Path(constants.PLUGINS_DIR).resolve()
+                cleaned_path = cleaned_path.relative_to(plugins_dir)
+
+            elif "mconduit" in cleaned_path.parts:
+
+                conduit_path = constants.CONDUIT_PATH.parent.resolve()
+                cleaned_path = cleaned_path.relative_to(conduit_path)
             
-            tb += text.dark_red("Function: ").bold()
-            tb += text.red(clean(self.traceback["function"])).italic().endl()
+            tb += text.red(str(cleaned_path)).italic().endl()
+            
+            if self.traceback["function"] != "<module>":
+
+                tb += text.dark_red("Function: ").bold()
+                tb += text.red(clean(self.traceback["function"])).italic().endl()
 
             tb += text.dark_red("Line: ").bold()
             tb += text.red(clean(str(self.traceback["line"]))).italic().endl()
@@ -159,7 +186,7 @@ def get_last_error() -> Optional[ConduitError]:
 
     exc_type, exc_value, exc_traceback = sys.exc_info()
 
-    if exc_value is None:
+    if exc_type is None or exc_value is None:
         return None
 
     frames = traceback.extract_tb(exc_traceback)
@@ -173,7 +200,7 @@ def get_last_error() -> Optional[ConduitError]:
     } if last_frame else None
 
     return ConduitError(
-        name=type(exc_type).__name__,
+        name=exc_type.__name__,
         info=str(exc_value),
         docs=None,
         traceback=frame_infos,

@@ -1,22 +1,19 @@
-from typing import Optional, TypeVar, Dict, List, Any, TYPE_CHECKING
+from __future__ import annotations
+from typing import Optional, Dict, List, Set, Any, TYPE_CHECKING
 from pathlib import Path
-import configparser
-import threading
-import parse
 import json
+import time
 
-from .server_commands import ServerCommandsAPI
-from .enums import Gamemode, Difficulty
-from .plugins import Permission
-from .utils.rcon import Rcon
-from ._types import Player
+from mconduit.server_commands import ServerCommandsAPI
+from mconduit.enums import Gamemode, Difficulty
+from mconduit.world import WorldSnapshot, CachedWorldReader
+from mconduit.scoreboard import ScoreboardReader
+from mconduit._types import Player
 
 if TYPE_CHECKING:
-    from .conduit_config import ServerRunnerConfig
-    from .server import Server
-
-
-_T = TypeVar("_T")
+    from mconduit.server_runner import ServerRunner
+    from mconduit.world import CachedWorldReader, Overworld, Nether, End
+    from mconduit.scoreboard import Scoreboard, Objective, Team, DisplaySlot
 
 
 class Properties:
@@ -24,45 +21,50 @@ class Properties:
     Server properties
     """
 
+    _path: Path
+    _server: Optional[ServerAPI]
+    _cache: Dict[str, Any]
+
 
     def __init__(
         self,
         *,
-        server: Optional["Server"] = None,
-        path: Optional[Path]= None
+        path: Optional[Path] = None,
+        server: Optional[ServerAPI] = None
     ) -> None:
-        
-        if server is None and path is None:
-            ValueError("Both server path are None!")
-        
-        self.__server = server
 
+        self._server = server
+        
         if server is not None:
-            self.__path = server.path / "server.properties"
+            self._path = server.path / "server.properties"
+
+        elif path is not None:
+            self._path = path / "server.properties"
+
         else:
-            self.__path = path / "server.properties"
-            
-        self.__cache = {}
+            ValueError("Both server path are None!")
+
+        self._cache = {}
         self.load()
 
     
     def _read(self) -> Optional[str]:
 
-        if self.__server is not None:
-            return self.__server.read_file(self.__path)
+        if self._server is not None:
+            return self._server.read_file(self._path)
         
-        with open(self.__path) as f:
+        with open(self._path) as f:
             return f.read()
         
 
     def _save(self, data: str) -> None:
         
-        if self.__server is not None:
+        if self._server is not None:
 
-            self.__server.read_file(self.__path)
+            self._server.write_file(self._path, data)
             return
         
-        with open(self.__path, "w") as f:
+        with open(self._path, "w") as f:
             f.write(data)
 
     
@@ -79,7 +81,7 @@ class Properties:
     def load(self) -> None:
         
         lines = self._get_lines()
-        self.__cache.clear()
+        self._cache.clear()
 
         for line in lines:
 
@@ -89,23 +91,23 @@ class Properties:
                 len(line) == 0 or
                 line.startswith("#") or
                 "=" not in line
-                ):
+            ):
                 continue
 
             key, value = line.split("=", 1)
-            self.__cache[key] = value
+            self._cache[key] = value
 
 
     def has_attribute(self, attribute: str) -> bool:
-        return attribute in self.__cache
+        return attribute in self._cache
     
 
     def get(
         self,
         key: str,
-        default: _T | None = None
-    ) -> _T:
-        return self.__cache.get(key, default)
+        default: Any | None = None
+    ) -> Any:
+        return self._cache.get(key, default)
 
     
     def set(
@@ -141,7 +143,7 @@ class Properties:
 
     
     def as_dict(self) -> Dict[str, str]:
-        return dict(self.__cache)
+        return dict(self._cache)
 
 
 class ServerAPI(ServerCommandsAPI):
@@ -153,72 +155,34 @@ class ServerAPI(ServerCommandsAPI):
     They are all grouped here for redability
     """
 
+    
+    _properties: Properties
+    _world_snapshot: WorldSnapshot
+    _world_reader: CachedWorldReader
+    _scoreboard_reader: ScoreboardReader
 
-    PROPERTIES_FILENAME = "server.properties"
-    __high_permission_level: bool
-    __rcon: Rcon # This will be initialized from Server
-    __lock: threading.Lock
 
-
-    def init(
+    def __init__(
         self,
-        config: "ServerRunnerConfig",
-        rcon: Rcon
+        runner: ServerRunner
     ) -> None:
 
-        self.__config = config
-        self.__rcon = rcon
-        self.__high_permission_level = config.high_permissions
+        super().__init__(runner)
 
-        super().init(config, rcon)
-        
-        properties = self.read_file(self.PROPERTIES_FILENAME)
-        
-        if properties is None:
-            raise FileNotFoundError("Missing `server.properties` file!")
+        self._properties = Properties(server=self)
 
-        prop_data = "[dummy-section]\n" + properties
-        c = configparser.RawConfigParser()
-        c.read_string(prop_data)
-        
-        self.__prop = dict(c["dummy-section"])
-        self.__lock = threading.Lock()
+        self._world_snapshot = WorldSnapshot(self)
+        self._world_reader = CachedWorldReader(self._world_snapshot)
+        self._scoreboard_reader = ScoreboardReader(self, self._world_snapshot)
 
 
-    def __change_data(self, key: str, value: Any) -> None:
+    @property
+    def properties(self) -> Properties:
         """
-        Utility function used to edit properties
+        Wrapper of server.properties
         """
 
-        if type(value) is bool:
-            value = "true" if value else "false"
-
-        with self.__lock:
-            
-            raw = self.read_file(self.PROPERTIES_FILENAME)
-
-            if raw is None:
-                raise FileNotFoundError(self.PROPERTIES_FILENAME)
-            
-            lines = raw.splitlines(keepends=True)
-            key_prefix = f"{key}="
-
-            found = False
-            new_lines = []
-
-        for line in lines:
-            stripped = line.lstrip()
-
-            if stripped.startswith(key_prefix):
-                new_lines.append(f"{key_prefix}{value}\n")
-                found = True
-            else:
-                new_lines.append(line)
-
-        if not found:
-            new_lines.append(f"\n{key_prefix}{value}\n")
-
-        self.write_file(self.PROPERTIES_FILENAME, "".join(new_lines))
+        return self._properties
 
 
     @property
@@ -227,12 +191,12 @@ class ServerAPI(ServerCommandsAPI):
         Message displayed in the server list under the server name
         """
 
-        return self.__prop.get("motd")
+        return self.properties.get("motd")
     
 
     @motd.setter
     def motd(self, value: str) -> None:
-        self.__change_data("motd", value)
+        self.properties.set("motd", value)
     
 
     @property
@@ -243,14 +207,14 @@ class ServerAPI(ServerCommandsAPI):
         3 - 32
         """
 
-        return int(self.__prop.get("simulation-distance"))
+        return int(self.properties.get("simulation-distance"))
 
 
     @simulation_distance.setter
     def simulation_distance(self, value: int) -> None:
 
         if 3 < value < 32:
-            self.__change_data("simulation-distance", value)
+            self.properties.set("simulation-distance", value)
 
 
     @property
@@ -259,14 +223,14 @@ class ServerAPI(ServerCommandsAPI):
         Radious in chunks of the portion of the world the server sends to the client
         """
 
-        return int(self.__prop.get("view-distance"))
+        return int(self.properties.get("view-distance"))
     
 
     @view_distance.setter
     def view_distance(self, value: int) -> None:
 
         if 3 < value < 32:
-            self.__change_data("view-distance", value)
+            self.properties.set("view-distance", value)
 
 
     @property
@@ -275,12 +239,12 @@ class ServerAPI(ServerCommandsAPI):
         Default server gamemode
         """
 
-        return self.__prop.get("gamemode")
+        return self.properties.get("gamemode") # TODO: Parse gamemode
 
 
     @gamemode.setter
     def gamemode(self, value: Gamemode) -> None:
-        self.__change_data("gamemode", value)
+        self.properties.set("gamemode", value)
 
 
     @property
@@ -289,12 +253,12 @@ class ServerAPI(ServerCommandsAPI):
         Default server difficulty
         """
 
-        return self.__prop.get("difficulty")
+        return self.properties.get("difficulty") # TODO: Parse
 
 
     @difficulty.setter
     def difficulty(self, value: Difficulty) -> None:
-        self.__change_data("difficulty", value)
+        self.properties.set("difficulty", value)
 
     
     @property
@@ -303,40 +267,40 @@ class ServerAPI(ServerCommandsAPI):
         If enable, player must download the resource pack to play
         """
 
-        return self.__prop.get("require-resource-pack")
+        return self.properties.get("require-resource-pack", False)
     
 
     @require_resource_pack.setter
     def require_resource_pack(self, value: bool) -> None:
-        self.__change_data("require-resource-pack", value)
+        self.properties.set("require-resource-pack", value)
 
 
     @property
-    def resource_pack_sha1(self) -> str:
+    def resource_pack_sha1(self) -> Optional[str]:
         """
         Resource pack sha1
         """
 
-        return self.__prop.get("resource-pack-sha1")
+        return self.properties.get("resource-pack-sha1", None)
     
 
     @resource_pack_sha1.setter
     def resource_pack_sha1(self, value: str) -> None:
-        self.__change_data("resource-pack-sha1", value)
+        self.properties.set("resource-pack-sha1", value)
 
     
     @property
-    def resource_pack_url(self) -> str:
+    def resource_pack_url(self) -> Optional[str]:
         """
         Resource pack url
         """
 
-        return self.__prop.get("resource-pack")
+        return self.properties.get("resource-pack", None)
 
     
     @resource_pack_url.setter
     def resource_pack_url(self, value: str) -> None:
-        self.__change_data("resource-pack", value)
+        self.properties.set("resource-pack", value)
 
 
     @property
@@ -345,7 +309,7 @@ class ServerAPI(ServerCommandsAPI):
         From whitelist.json
         """
 
-        data = json.load(open(Path(self.__config.path) / "whitelist.json"))
+        data = json.load(open(self.path / "whitelist.json"))
         
         return [player["name"] for player in data]
 
@@ -356,7 +320,7 @@ class ServerAPI(ServerCommandsAPI):
         From ops.json
         """
         
-        data = json.load(open(Path(self.__config.path) / "ops.json"))
+        data = json.load(open(self.path / "ops.json"))
 
         return [player["name"] for player in data]
 
@@ -367,6 +331,10 @@ class ServerAPI(ServerCommandsAPI):
         From banned-ips.json
         """
 
+        data = json.load(open(self.path / "banned-ips.json"))
+
+        return [player ["ip"] for player in data]
+
 
     @property
     def banned_players(self) -> List[str]: #TODO: Add machine support
@@ -374,49 +342,25 @@ class ServerAPI(ServerCommandsAPI):
         From banned-players.json
         """
 
-        data = json.load(open(Path(self.__config.path) / "banned-players.json"))
+        data = json.load(open(self.path / "banned-players.json"))
 
         return [player["name"] for player in data]
-    
-
-    def get_online_players(self) -> List[Player]:
-        """
-        Returns a list of all online players
-
-        Heavily inspired from https://github.com/TISUnion/ChatBridge/blob/master/chatbridge/impl/online/entry.py
-        """
-
-        formatters = (
-            r"There are {amount:d} of a max {limit:d} players online:{players}",  # <1.16
-			r"There are {amount:d} of a max of {limit:d} players online:{players}",  # >=1.16
-        )
-
-        response = self.execute("/list")
-
-        for formatter in formatters:
-            parsed_response = parse.parse(formatter, response)
-
-            if parsed_response is not None and parsed_response["players"].startswith(" "):
-                                
-                players = parsed_response["players"][1:]
-
-                if len(players) > 0:
-
-                    player_list = players.split(", ")
-                    
-                    return [Player(name, self) for name in player_list]
-
-                return []
                 
 
     def get_player_by_name(self, name: str) -> Optional[Player]:
         """
         Returns the player that matches the specified name if online
         """
-        
-        for player in self.get_online_players() or []:
-            if player.name == name:
-                return player
+
+        return self.online_players.get(name, None)
+
+
+    def get_player_named(self, name: str) -> Optional[Player]:
+        """
+        Alias of `get_player_by_name`
+        """
+
+        return self.get_player_by_name(name)
     
 
     def get_player_by_uuid(self, uuid: str) -> Optional[Player]:
@@ -424,33 +368,101 @@ class ServerAPI(ServerCommandsAPI):
         Returns the player that matches the specified uuid if online
         """
 
-        for player in self.get_online_players() or []:
+        for player in (self.online_players or {}).values():
             if player.uuid == uuid:
                 return player
+        
+        return None
+    
+
+    @property
+    def world(self) -> CachedWorldReader:
+        return self._world_reader
+
+
+    @property
+    def overworld(self) -> Overworld:
+        return self._world_reader.overworld
 
     
-    def get_permissions_for(self, player_name: str) -> Permission:
+    @property
+    def nether(self) -> Nether:
+        return self._world_reader.nether
 
-        permissions_names = ["Guest", "Member", "Helper", "Admin", "Owner"]
-        
-        player = self.get_player_by_name(player_name)
-        
-        if player is not None:
-            return player.permissions
 
-        for perm, teams in self.permissions.items():
+    @property
+    def end(self) -> End:
+        return self._world_reader.end
 
-            for team in teams:
-                data = self.execute(f"/team list {team}") or ""
+    
+    @property
+    def objectives(self) -> Dict[str, Objective]:
+        return self._scoreboard_reader.objectives
+
+
+    @property
+    def scoreboards(self) -> Dict[str, Scoreboard]:
+        return self._scoreboard_reader.scoreboards
+
+    
+    @property
+    def teams(self) -> Dict[str, Team]:
+        return self._scoreboard_reader.teams
+
+
+    @property
+    def display_slots(self) -> Dict[DisplaySlot, str]:
+        return self._scoreboard_reader.display_slots
+
+
+    @property
+    def data_version(self) -> int:
+        """
+        Data version of the nbt structures inside the `/world` folder
+        """
+
+        return self._world_reader.data_version
+
+
+    @property
+    def latest_world_save_time(self) -> float:
+        """
+        Latest time the world got saved
+        """
+
+        return self._world_snapshot.latest_world_save_time
+    
+
+    @property
+    def secs_since_last_world_save(self) -> float:
+        """
+        Time passed (in seconds) since the latest world save
+        """
+
+        return time.time() - self.latest_world_save_time
+
+
+
+    def get_all_joined_players(self) -> List[str]:
+        """
+        Returns a lists with all names of the players who joined in this server
+        """
+
+        joined_players: Set[str] = set()
+
+        usercache_path = self.path / "usercache.json"
+
+        try:
+            with open(usercache_path) as f:
                 
-                data = parse.parse(r"Team [{team}] has {n} member(s): {members}", data)
+                all_players = json.load(f)
 
-                if data:
+                for entry in all_players:
 
-                    players = data["members"].split(", ")
-                    
-                    if player_name in players:
-                        
-                        return permissions_names[perm]
+                    if "name" in entry:
+                       joined_players.add(entry["name"])
 
-        return Permission.Guest
+                return list(joined_players)
+
+        except (json.JSONDecodeError, IOError):
+            return []

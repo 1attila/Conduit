@@ -1,10 +1,10 @@
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from datetime import datetime
 import multiprocessing
 
 if TYPE_CHECKING:
-    from ..handler import Handler
+    from mconduit.handler import Handler
 
 
 @dataclass
@@ -15,7 +15,7 @@ class PluginProcess:
 
     process: multiprocessing.Process
     start_time: datetime
-    stop_time: datetime
+    stop_time: Optional[datetime]
 
 
 class ProcessHandler:

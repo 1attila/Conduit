@@ -4,26 +4,26 @@ from prompt_toolkit.formatted_text import FormattedText
 from pathlib import Path
 import asyncio
 
-from .multi_input_dialog import multi_input_dialog, TextInput, CheckboxInput
-from .error_dialog import ErrorDialog
-from .directory_selector import DirectorySelector
-from .version_selector import VersionSelector
-from ..utils.version_fetcher import (
+from mconduit.cli.multi_input_dialog import multi_input_dialog, TextInput, CheckboxInput
+from mconduit.cli.error_dialog import ErrorDialog
+from mconduit.cli.directory_selector import DirectorySelector
+from mconduit.cli.version_selector import VersionSelector
+from mconduit.utils import (
     download_server_jar,
     agree_eula,
     fetch_vanilla_url,
     generate_server_properties
 )
-from .styles import *
-from ..lang import Lang
-from ..conduit_config import ServerRunnerConfig, RconConfig
-from ..config_setup import (
+from mconduit.cli.styles import *
+from mconduit.lang import Lang
+from mconduit.conduit_config import ServerRunnerConfig, RconConfig
+from mconduit.config_setup import (
     find_servers,
     generate_rcon_password,
     get_ip_port_mappings,
     get_port
 )
-from ..server_api import Properties
+from mconduit.server_api import Properties
 
 
 class RconConfigSetter:
@@ -266,7 +266,7 @@ class Download:
             text=mid_blue(l["Select what kind of server you want to download"]),
             values=[
                 (0, FormattedText([(f"{DEEP_BLUE} bold", "vanilla")])),
-                #(1, FormattedText([(f"{DEEP_BLUE} bold", "fabric")])) #TODO: Add this, bukkit, forge, quilt, neoforge
+                (1, FormattedText([(f"{DEEP_BLUE} bold", "fabric")])) #TODO: Add bukkit, forge, quilt, neoforge
             ],
             style=welcome_style
         ).run()
@@ -286,10 +286,28 @@ class Download:
             l["Select where you want to download the server"]
         ).run()
 
+        dir = Path(dir)
+
+        if dir.exists() and (dir / "server.jar").exists():
+
+            ErrorDialog(
+                l["Another server was found!"],
+                l[f"Theres a file named server.jar inside /{dir.name}"]
+            )
+            return
+
         try:
             
-            if server_type == 0: # vanilla
-                url = fetch_vanilla_url(url)
+            match server_type:
+
+                case 0: # vanilla
+                    url = fetch_vanilla_url(url)
+                
+                case 1: # fabric
+                    ...
+                
+                case _:
+                    raise RuntimeError("Invalid server type!")
 
             download_server_jar(url, dir)
 
@@ -299,7 +317,7 @@ class Download:
                 title=l["Server download failed!"],
                 text=str(e),
             ).run()
-            return {} # TODO
+            return {}
 
         EULA_LINK = "https://www.minecraft.net/en-us/eula"
         
@@ -360,6 +378,33 @@ class Download:
             return
 
 
+class FromSingleplayer:
+
+    def __init__(self, lang: Lang) -> None:
+        self.lang = lang
+
+    def run(self):
+
+        l = self.lang
+
+        dir = DirectorySelector(
+            l["Server from singleplayer"],
+            l["Select where you want to download the server"]
+        ).run()
+
+        dir = Path(dir)
+
+        if not dir.exists() or dir.is_file():
+
+            ErrorDialog(
+                l["Invalid directory"],
+                l["The given directory does not exist!"]
+            ).run()
+
+            return
+        
+        ...
+    
 class AddServer:
     """
     Conduit can add a Minecraft server in 3 ways:
@@ -389,7 +434,8 @@ class AddServer:
             values=[
                 (0, choice("Automatic", "Scan this machine to find all Minecraft servers")),
                 (1, choice("Manual", "Input the directory of the server")),
-                (2, choice("Download", "Create a new one"))
+                (2, choice("Download", "Create a new one")),
+                # (3, choice("From singleplayer", "Create a server from a singleplayer world"))
             ],
             default=0,
             style=welcome_style
@@ -405,3 +451,8 @@ class AddServer:
             
             case 2:
                 return Download(self.lang).run()
+
+            case 3:
+                return FromSingleplayer(self.lang).run()
+
+        return None

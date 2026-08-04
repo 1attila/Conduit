@@ -4,6 +4,8 @@ from typing import (
     Union,
     List,
     Literal,
+    ParamSpec,
+    Concatenate,
     Any,
     overload,
     get_origin,
@@ -13,11 +15,15 @@ from typing import (
 import textwrap
 import inspect
 
-from .flag import Flag
-from .. import text
+from mconduit.plugins.flag import Flag
+from mconduit import text
 
 if TYPE_CHECKING:
-    from .. import Context
+    from mconduit.context import Context
+
+
+P = ParamSpec("P")
+CommandFunc = Callable[Concatenate["Context", P], Any]
 
 
 class GroupCommandCalled(Exception):
@@ -79,16 +85,16 @@ class Command:
     Plugin command
     """
 
-    __name: str
-    __aliases: List[str]
-    __flags: List[Parameter]
-    __docs: str
-    __fallback: Callable
-    __parameters: List[Parameter]
-    __subcommands: List["Command"]
-    __list_offset: Optional[int]
-    __list_type: Optional[object]
-    __checks: List[Callable]
+    _name: str
+    _aliases: List[str]
+    _flags: List[str]
+    _docs: str
+    _fallback: Callable
+    _parameters: List[Parameter]
+    _subcommands: List["Command"]
+    _list_offset: Optional[int]
+    _list_type: Optional[object]
+    _checks: List[Callable]
     
 
     def __init__(
@@ -97,47 +103,55 @@ class Command:
         **kwargs
     ) -> None:
         
-        self.__fallback = fallback # Bind happens in Plugin._recursive_command_bind()
-        self.__name = kwargs.pop("name", fallback.__name__)
-        self.__aliases = kwargs.pop("aliases", [])
-        self.__docs = kwargs.pop("docs", fallback.__doc__)
-        self.__checks = kwargs.pop("checks", [])
+        self._fallback = fallback # Bind happens in Plugin._recursive_command_bind()
+        self._name = kwargs.pop("name", fallback.__name__)
+        self._aliases = kwargs.pop("aliases", [])
+        self._docs = kwargs.pop("docs", fallback.__doc__)
+
+        kwargs_checks = kwargs.pop("checks", [])
         
-        if not isinstance(self.__checks, list): # So that users can do checks=check1 instead of checks=[check1]
-            self.__checks = [self.__checks]
+        if not isinstance(kwargs_checks, list): # So that users can do checks=check1 instead of checks=[check1]
+            kwargs_checks = [kwargs_checks]
         
-        if not isinstance(self.__aliases, list):
-            self.__aliases = [self.__aliases]
+        self._checks = list(kwargs_checks)
+
+        func_checks = getattr(self._fallback, "_checks", [])
+        self._checks.extend(func_checks)
+        
+        if not isinstance(self._aliases, list):
+            self._aliases = [self._aliases]
 
         parameters = inspect.Signature.from_callable(fallback).parameters
-        self.__parameters = [Parameter(arg) for arg in parameters.values()]
-        self.__parameters.pop(0) # 'self' param (bind in Plugin._recursive_command_bind())
-        self.__subcommands = []
-        self.__flags = []
+        self._parameters = [Parameter(arg) for arg in parameters.values()]
+        self._parameters.pop(0) # 'self' param (bind in Plugin._recursive_command_bind())
+        self._subcommands = []
+        self._flags = []
         
-        if len(self.__parameters) == 0:
+        if len(self._parameters) == 0:
             raise MissingContextArgument()
         
-        if not str(self.__parameters[0].type) in ["<class 'mconduit.context.Context'>", "Context"]:
-            raise MissingContextArgument(f"Found {self.__parameters[0].name} of type {self.__parameters[0].type} in {self.__name}")
+        if not str(self._parameters[0].type) in ["<class 'mconduit.context.Context'>", "Context"]:
+            raise MissingContextArgument(
+                f"Found {self._parameters[0].name} of type {self._parameters[0].type} in {self._name}"
+            )
             
-        self.__parameters.pop(0) # 'Context' param
+        self._parameters.pop(0) # 'Context' param
         self._split_flags()
-        self.__list_type = None
-        self.__list_offset = self._get_list_offset()
+        self._list_type = None
+        self._list_offset = self._get_list_offset()
 
         if self.docs is not None:
-            self.__docs = textwrap.dedent(self.docs)
+            self._docs = textwrap.dedent(self.docs)
 
     
     def _get_list_offset(self) -> Optional[int]:
         """
         Returns the index where the parameter of type list is, if any
 
-        This automatically sets __list_type aswell
+        This automatically sets _list_type aswell
         """
 
-        for i, param in enumerate(self.__parameters):
+        for i, param in enumerate(self._parameters):
             
             if (
                 get_origin(param.type) is list or
@@ -149,24 +163,30 @@ class Command:
                 if len(list_type) == 0:
                     raise ListItemTypeNotSpecified()
 
-                self.__list_type = list_type[0]
+                self._list_type = list_type[0]
                 return i
+
+        return None
             
 
     def _split_flags(self) -> None:
         """
         Separates normal parameters from flags
         """
+
+        temp_flags: List[Parameter] = []
         
-        for parameter in self.__parameters:
+        for parameter in self._parameters:
             
             if parameter.type is Flag:
-                self.__flags.append(parameter)
+                temp_flags.append(parameter)
 
-        for i, flag in enumerate(self.__flags):
+        for flag in temp_flags:
             
-            self.__parameters.remove(flag)
-            self.__flags[i] = flag.name
+            self._parameters.remove(flag)
+            self._flags.append(flag.name)
+        
+        return None
 
 
     def _run_checks(self, ctx: "Context") -> bool:
@@ -174,7 +194,7 @@ class Command:
         Runs all the command checks with the given Context 
         """
 
-        for check in self.__checks:
+        for check in self._checks:
             
             if not check(ctx):
                 return False
@@ -207,17 +227,17 @@ class Command:
         
         if len(cmd) > 1:
 
-            for subcommand in self.__subcommands:
+            for subcommand in self._subcommands:
 
-                for completion in subcommand._get_command_completions(cmd[1:]):
+                for completion in subcommand._get_command_completions(cmd[1:], ctx):
                     command_completions.append(cmd[0] + completion)
 
             return command_completions
 
-        for subcommand in self.__subcommands:
+        for subcommand in self._subcommands:
             command_completions.append(cmd[0] + subcommand.names[0])
             
-        command_completions.append(cmd[0] + " ".join(f"<{param.name}>" for param in self.__parameters))
+        command_completions.append(cmd[0] + " ".join(f"<{param.name}>" for param in self._parameters))
         
         return command_completions
 
@@ -228,7 +248,7 @@ class Command:
         Command name and aliases
         """
         
-        return [self.__name] + self.__aliases
+        return [self._name] + self._aliases
     
 
     @property
@@ -237,7 +257,7 @@ class Command:
         Command's subcommands
         """
 
-        return self.__subcommands
+        return self._subcommands
 
     
     @property
@@ -246,7 +266,7 @@ class Command:
         Command short doc
         """
         
-        return self.__docs
+        return self._docs
 
 
     @property
@@ -255,7 +275,7 @@ class Command:
         Function that is associated with this command
         """
 
-        return self.__fallback
+        return self._fallback
     
     
     def _execute(
@@ -275,7 +295,7 @@ class Command:
         
         if len(args) > 0:
             
-            for subcommand in self.__subcommands:
+            for subcommand in self._subcommands:
 
                 if args[0] in subcommand.names:
                     try:
@@ -287,12 +307,12 @@ class Command:
                         raise e
         try:
             fn_input = self._prepare_args(ctx, args, flags)
-            self.__fallback(*fn_input)
+            self._fallback(*fn_input)
 
             ctx.server.handler.telemetry.command_invoked(
                 ctx.server,
-                getattr(self.__fallback, "__self__"),
-                self.__name
+                getattr(self._fallback, "__self__"),
+                self._name
             )
             return True
         
@@ -310,24 +330,23 @@ class Command:
 
         If type it's Union, tries to cast all it's values until it finds one that works
         """
-        
-        if get_origin(_type) is Union:
 
-            for t in get_args(_type):
-                try:
-                    return self._cast(value, t)
-                except:
-                    pass
-            raise CastError()
-
-        elif get_origin(_type) is Optional:
+        if get_origin(_type) is Optional:
 
             for t in get_args(_type):
                 try:
                     return self._cast(value, t)
                 except:
                     return None
-            raise CastError()
+                
+        elif get_origin(_type) is Union:
+
+            for t in get_args(_type):
+                try:
+                    return self._cast(value, t)
+                except:
+                    pass
+            raise CastError(f"Cannot convert `{value}` into `{_type}`")
 
         elif get_origin(_type) is Literal:
             return value
@@ -341,12 +360,12 @@ class Command:
             elif lowered in ('no', 'n', 'false', 'f', '0', 'disable', 'off'):
                 return False
             else:
-                raise CastError()
+                raise CastError(f"Cannot convert `{value}` into `bool`")
 
         try:
             return _type(value)
         except:
-            raise CastError()
+            raise CastError(f"Cannot convert `{value}` into `{_type}`")
                 
 
     def _match_args(
@@ -360,24 +379,24 @@ class Command:
         Can handle Lists and default values
         """
         
-        if len(self.__parameters) == 0:
+        if len(self._parameters) == 0:
             if len(args) > 0:
                 raise TooManyParameters()
             
             return [ctx]
         
-        fn_input = [ctx]
+        fn_input: List[Any] = [ctx]
         n_input = len(args)
 
-        if self.__list_offset is not None:
+        if self._list_offset is not None:
             
-            args_after_list = len(self.__parameters) - self.__list_offset - 1
-            n_list = max(n_input - args_after_list - self.__list_offset, 1)
+            args_after_list = len(self._parameters) - self._list_offset - 1
+            n_list = max(n_input - args_after_list - self._list_offset, 1)
 
             try:
-                for i in range(self.__list_offset):
+                for i in range(self._list_offset):
                     
-                    param = self.__parameters[i]
+                    param = self._parameters[i]
 
                     if i < len(args):
                         item = self._cast(args[i], param.type)
@@ -391,11 +410,11 @@ class Command:
             except Exception as e:
                 raise e
             
-            if n_input - 1 < self.__list_offset:
+            if n_input - 1 < self._list_offset:
 
-                if self.__list_offset + 1 != len(self.__parameters):
+                if self._list_offset + 1 != len(self._parameters):
                     
-                    param = self.__parameters[self.__list_offset]
+                    param = self._parameters[self._list_offset]
 
                     if param.has_default_value:
                         fn_input.append(param.default_value)
@@ -406,10 +425,10 @@ class Command:
                 param_list = list()
 
                 try:
-                    for i in range(self.__list_offset, self.__list_offset + n_list):
+                    for i in range(self._list_offset, self._list_offset + n_list):
                     
                         param_list.append(
-                            self._cast(args[i], self.__list_type)
+                            self._cast(args[i], self._list_type)
                         )
                 except Exception as e:
                     raise e
@@ -417,9 +436,9 @@ class Command:
                 fn_input.append(param_list)
             
             try:
-                for i in range(self.__list_offset + 1, len(self.__parameters)):
+                for i in range(self._list_offset + 1, len(self._parameters)):
                     
-                    param = self.__parameters[i]
+                    param = self._parameters[i]
                     offset = i + n_list - 1
 
                     if offset < n_input:
@@ -435,11 +454,11 @@ class Command:
                 raise e
         else:
 
-            if n_input > len(self.__parameters):
+            if n_input > len(self._parameters):
                 raise TooManyParameters()
             
             try:
-                for i, param in enumerate(self.__parameters):
+                for i, param in enumerate(self._parameters):
                     
                     if i < len(args):
                         item = self._cast(args[i], param.type)
@@ -465,7 +484,7 @@ class Command:
         Appends all the flags
         """
         
-        for flag in self.__flags:
+        for flag in self._flags:
             fn_input.append(f"--{flag}" in flags)
 
         return fn_input
@@ -492,20 +511,20 @@ class Command:
         Return command documentation with parameter annotation
         """
         
-        t = prefix + str(self.__name) + " "
-        t += " ".join([f"<{param.name}>" for param in self.__parameters])
+        t = prefix + str(self._name) + " "
+        t += " ".join([f"<{param.name}>" for param in self._parameters])
 
-        if len(self.__parameters) > 0:
+        if len(self._parameters) > 0:
             t += " "
         
-        t += " ".join([f"--{flag}" for flag in self.__flags])
+        t += " ".join([f"--{flag}" for flag in self._flags])
 
         doc = text.bold(t)
 
-        if len(self.__aliases) > 0:
+        if len(self._aliases) > 0:
             doc += text.gold("\nAliases:")
 
-            for alias in self.__aliases:
+            for alias in self._aliases:
 
                 al = text.gray(f"{prefix}{alias}").underlined()
                 al.hover(show_text="Click to paste in chat!")
@@ -514,33 +533,33 @@ class Command:
                 doc += " "
                 doc += al
 
-        if self.__docs is not None:
-            doc += text.italic(f"\n{self.__docs.strip()}")
+        if self._docs is not None:
+            doc += text.italic(f"\n{self._docs.strip()}")
 
         doc += "\n"
 
-        if len(self.__subcommands) > 0:
+        if len(self._subcommands) > 0:
 
             doc += text.gold("Subcommands:")
 
-            for subcommand in self.__subcommands:
+            for subcommand in self._subcommands:
 
                 sb = text.gray(f"{subcommand.names[0]}").underlined()
                 sb.hover(show_text="Click to paste in chat!")
-                sb.click(suggest_command=f"{prefix} {self.__name} {subcommand.names[0]}")
+                sb.click(suggest_command=f"{prefix} {self._name} {subcommand.names[0]}")
             
                 doc += " "
                 doc += sb
 
             doc += "\n\n"
 
-        if len(self.__parameters) > 0:
+        if len(self._parameters) > 0:
             doc += text.gold("Parameters: \n")
 
-        for param in self.__parameters: # This might be replaced by a table
+        for param in self._parameters: # This might be replaced by a table
 
             doc += text.white(f"  • {param.name}: ")
-            doc += text.gray(param.type)
+            doc += text.gray(param.type) # type: ignore
             
             if not param.needed:
                 doc += text.white(f"={param.default_value}")
@@ -548,10 +567,10 @@ class Command:
             doc += "\n"
 
         """
-        if len(self.__flags) > 0:
+        if len(self._flags) > 0:
             doc += "Flags: \n"
 
-        for flag in self.__flags:
+        for flag in self._flags:
 
             doc += f"--{flag}\n" """
         
@@ -560,17 +579,17 @@ class Command:
 
     def add_check(self, fn: Callable[["Context"], bool]) -> "Command":
         """
-        Adds a check to this
+        Adds a check to this command
         """
 
-        self.__checks.append(fn)
+        self._checks.append(fn)
         return self
 
 
     @classmethod
-    def group(self, name: str, **kwargs) -> "Command":
+    def group(cls, name: str, **kwargs) -> "Command":
         """
-        This function creates commands that can't be invoked but it's subcommans can
+        This function creates commands that can't be invoked alone but it's subcommans can
 
         e.g:
         ```
@@ -589,47 +608,52 @@ class Command:
         def fallback(self, ctx: "Context"):
             raise GroupCommandCalled()
 
-        return Command(name=name, fallback=fallback, **kwargs)
+        return cls(name=name, fallback=fallback, **kwargs)
 
 
     @overload
-    def command(self, fn: Callable[["Context"], Any]) -> "Command":
+    def command(self, fn: CommandFunc) -> "Command":
         ...
 
+
     @overload
-    def command(self, **attrs) -> Callable:
+    def command(self, fn: None = None, **attrs) -> Callable:
         ...
+
 
     def command(
         self,
-        fn: Optional[Callable[["Context"], Any]] = None,
+        fn: Optional[CommandFunc] = None,
         **attrs
     ) -> Union["Command", Callable]:
         """
         A decorator that transforms the function into a Plugin Command
         """
 
-        def decorator(fn: Callable):
-            self.__subcommands.append(Command(fn, **attrs))
+        def decorator(fn: Callable) -> None:
+            self._subcommands.append(Command(fn, **attrs))
     
         if fn is not None:
-            self.__subcommands.append(Command(fn, **attrs))
+            self._subcommands.append(Command(fn, **attrs))
+            return self
         else:
             return decorator
 
 
 @overload
-def command(fn: Callable[["Context"], Any]) -> "Command":
+def command(fn: CommandFunc) -> "Command":
     ...
+
 
 @overload
-def command(**attrs) -> Callable:
+def command(fn: None = None, **attrs) -> Callable[[CommandFunc], "Command"]:
     ...
 
+
 def command(
-    fn: Optional[Callable[["Context"], Any]] = None,
+    fn: Optional[CommandFunc] = None,
     **attrs
-) -> Union["Command", Callable]:
+) -> Union["Command", Callable[[CommandFunc], "Command"]]:
     """
     A decorator that transforms the function into a Plugin Command
     """

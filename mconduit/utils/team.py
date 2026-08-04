@@ -1,7 +1,7 @@
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..server import Server
+    from mconduit.server import Server
 
 
 def list_teams(server: "Server") -> List[str]:

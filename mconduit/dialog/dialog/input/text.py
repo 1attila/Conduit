@@ -27,15 +27,15 @@ class Text(BaseInput):
         key: str,
         label: text.Text,
         *,
-        width: int=200,
-        label_visible: bool=True,
-        initial: Optional[str]=None,
-        max_length: int=32,
-        multi_line: Optional[MultiLine]=None
-    ) -> "Text":
+        width: int = 200,
+        label_visible: bool = True,
+        initial: Optional[str] = None,
+        max_length: int = 32,
+        multi_line: Optional[MultiLine] = None
+    ) -> None:
         
         super().__init__(
-            type=InputType.Text,
+            type=InputType.TEXT,
             key=key,
             label=label
         )

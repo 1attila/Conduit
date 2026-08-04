@@ -2,14 +2,23 @@
 World reading API
 """
 
-from .world import WorldReader, CachedWorldReader, Region, Chunk, SubChunk, Block
+from .world_snapshot import WorldSnapshot
+from .world import (
+    WorldReader,
+    CachedWorldReader,
+    Region,
+    Chunk,
+    SubChunk,
+    Block,
+    Overworld,
+    Nether,
+    End
+)
 
 
 __all__ = [
-    "WorldReader",
-    "CachedWorldReader",
-    "Region",
-    "Chunk",
-    "SubChunk",
-    "Block"
+    "WorldSnapshot",
+    "WorldReader", "CachedWorldReader",
+    "Region", "Chunk", "SubChunk", "Block",
+    "Overworld", "Nether", "End"
 ]

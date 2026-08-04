@@ -6,11 +6,8 @@ def rgb_to_argb(r: int, g: int, b: int, a: int = 255) -> int:
     """
     Transform a RGB/RGBA color into ARGB.
 
-    Usef for text_displays background
+    Useful for text_displays background
     """
-    
-    if r == 0 and g == 0 and b == 0:
-        return 0
 
     unsigned_mc_color = (a << 24) | (r << 16) | (g << 8) | b
     signed_mc_color = ctypes.c_int32(unsigned_mc_color).value
@@ -18,33 +15,35 @@ def rgb_to_argb(r: int, g: int, b: int, a: int = 255) -> int:
     return signed_mc_color
 
 
-def rgb_to_hsv(r: int, g: int, b: int) -> Tuple[int, int, int]:
+def rgb_to_hsv(r: int, g: int, b: int) -> Tuple[int, float, float]:
     """
     Transforms RGB colors into HSV
     """
 
-    r /= 255 # type: ignore
-    g /= 255 # type: ignore
-    b /= 255 # type: ignore
+    rf = r / 255.0
+    gf = g / 255.0
+    bf = b / 255.0
 
-    max_ = max(r, g, b)
-    min_ = min(r, g, b)
+    max_ = max(rf, gf, bf)
+    min_ = min(rf, gf, bf)
 
     delta = max_ - min_
 
-    h = 0
+    h = 0.0
 
-    if max_ == r:
-        h = 60 * (((g - b) / delta) % 6)
-    elif max_ == g:
-        h = 60 * ((b - r) / delta + 2)
-    elif max_ == b:
-        h = 60 * ((r - g) / delta + 4)
+    if delta == 0:
+        h = 0.0
+    elif max_ == rf:
+        h = 60.0 * (((gf - bf) / delta) % 6)
+    elif max_ == gf:
+        h = 60.0 * ((bf - rf) / delta + 2)
+    elif max_ == bf:
+        h = 60.0 * ((rf - gf) / delta + 4)
 
     s = 0 if max_ == 0 else delta / max_
     v = max_
 
-    return h, s, v
+    return round(h), round(s * 100, 1), round(v * 100, 1)
 
 
 def hex_to_rgb(color: str) -> Tuple[int, int, int]:
