@@ -1,7 +1,7 @@
 from typing import Tuple
 from enum import Enum
 
-import parse
+import parse # type: ignore[import-untyped]
 
 
 class XRot(Enum):

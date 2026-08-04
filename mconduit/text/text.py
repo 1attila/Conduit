@@ -1,12 +1,47 @@
-from typing import Union, Tuple, Optional, Callable, List, Dict, TYPE_CHECKING
+from __future__ import annotations
+from typing import Union, Tuple, Optional, Callable, List, Dict, Any, cast, TYPE_CHECKING
 import warnings
 import copy
 
-from .style import Style
-from ..enums.color import Color
+from mconduit.text.style import Style
+from mconduit.enums.color import Color
 
 if TYPE_CHECKING:
-    from ..context import Context
+    from mconduit.context import Context
+
+
+ClickCallback = Callable[["Context"], Any]
+
+HOVER_ACTIONS = [
+    "show_text",
+    "show_item",
+    "show_entity"
+]
+
+CLICK_ACTIONS = [
+    "suggest_command",
+    "run_command",
+    "run_function",
+    "open_url",
+    "copy_to_clipboard",
+    "open_file"
+]
+
+STYLES = [
+    Style.OBFUSCATED,
+    Style.BOLD,
+    Style.STRIKETHROUGH,
+    Style.UNDERLINED,
+    Style.ITALIC
+]
+
+
+def format_color(color: Color | str) -> str:
+
+    if hasattr(color, "value"):
+        return color.value
+
+    return color
 
 
 class Text:
@@ -25,7 +60,7 @@ class Text:
     def __init__(
         self,
         text: Union[str, "Text"],
-        color: Color = Color.White,
+        color: Color = Color.WHITE,
         *styles: Style
     ) -> None:
         """
@@ -40,8 +75,8 @@ class Text:
             
             self.text = text.text
             self.color = text.color
-            self.styles = text.styles
-            self.hover_action = text.hover_action
+            self.styles = list(text.styles)
+            self.hover_action = copy.deepcopy(text.hover_action)
             self.click_action = text.click_action
             self.text_bits = copy.deepcopy(text.text_bits)
         else:
@@ -51,15 +86,14 @@ class Text:
             
             if "'" in text or '"' in text:
 
-                warnings.warn(f"Text `{text}` contains quotes! This migth cause issues and might not be displayed!")
+                warnings.warn(f"Text `{text}` contains quotes! This might cause issues and might not be displayed!")
                 
                 text = text.replace("'", "`")
                 text = text.replace('"', "`")
 
             self.text = text
-        
-        self.color = color
-        self.styles = list(styles)
+            self.color = color
+            self.styles = list(styles)
 
 
     @property
@@ -77,42 +111,72 @@ class Text:
     
     
     @staticmethod
-    def _get_styles(d: Dict) -> List[Style]:
+    def _get_styles(
+        d: Dict,
+        default_styles: Optional[List[Style]] = None
+    ) -> List[Style]:
 
-        styles = [Style.Obfuscated, Style.Bold, Style.Strikethrough, Style.Underlined, Style.Italic]
         text_styles = []
 
-        for style in styles:
-            if style.value in d.keys():
+        for style in STYLES:
+            
+            style_name = style.value
+
+            if style_name in d.keys():
+                
+                if d[style_name] is True:
+                    text_styles.append(style)
+
+            elif default_styles is not None and style in default_styles:
                 text_styles.append(style)
 
         return text_styles
 
     
     @staticmethod
-    def from_dict(d: Union[Dict, List]) -> "Text":
+    def from_dict(
+        d: Union[Dict, List],
+        default_color: Optional[Color] = None,
+        default_styles: Optional[List[Style]] = None
+    ) -> "Text":
         
         if isinstance(d, List):
             
-            t = [Text.from_dict(item) for item in d]
+            assert len(d) > 0
+            first_bit = Text.from_dict(d[0])
 
-            main = t.pop(0)
-            text = Text(main.text, main.color, *main.styles)
+            if default_color is None:
+                default_color = first_bit.color
+
+            if default_styles is None:
+                default_styles = first_bit.styles
+
+            t = [Text.from_dict(item, default_color, default_styles) for item in d[1:]]
+
+            text = first_bit
             text.text_bits.extend(t)
 
             return text
 
-        color = Color.White
-
         if "color" in d.keys():
             color = d["color"]
+        else:
+            if default_color is None:
+                color = Color.WHITE
+            else:
+                color = default_color
+        
+        styles = Text._get_styles(d, default_styles)
 
-        text = Text(d["text"], color, *Text._get_styles(d))
+        text = Text(d["text"], color, *styles)
 
         if "hoverEvent" in d.keys():
-            text.hover(d["hoverEvent"]["action"], d["hoverEvent"]["value"])
+            text.hover(**{d["hoverEvent"]["action"]: d["hoverEvent"]["value"]})
         if "clickEvent" in d.keys():
-            text.click(d["clickEvent"]["action"], d["clickEvent"]["value"])
+            text.click(**{d["clickEvent"]["action"]: d["clickEvent"]["value"]})
+
+        if "extra" in d.keys():
+            text += Text.from_dict(d["extra"], text.color, text.styles)
 
         return text
 
@@ -156,16 +220,17 @@ class Text:
         if type(text) is Text:
             return inst(text)
         else:
+            text = str(text)
 
             if len(inst.text_bits) > 0:
                 
                 tb = inst.text_bits[-1]
 
-                if len(tb.styles) == 0 and tb.hover_action == () and tb.click_action == ():
+                if len(tb.styles) == 0 and tb.hover_action is None and tb.click_action is None:
                     tb.text += text # type: ignore
                     return inst
             
-            elif len(inst.styles) == 0 and inst.hover_action == () and inst.hover_action == ():
+            elif len(inst.styles) == 0 and inst.hover_action is None and inst.click_action is None:
                 inst.text += text # type: ignore
                 return inst
             
@@ -300,7 +365,7 @@ class Text:
         self,
         use_v1215_format: bool = False,
         parent_styles: Optional[List[Style]] = None,
-        original_color: Optional[Color] = None
+        original_color: Optional[Color | str] = None
     ) -> Union[Dict, List]:
         """
         Transforms this text (and all it's sub-components recursively) into a Dict or a List of Dict(s)
@@ -309,9 +374,10 @@ class Text:
         if parent_styles is None:
             parent_styles = []
 
+        bits_to_serialize = list(self.text_bits)
         event_flag = False
 
-        if (self.hover_action != () or self.click_action != ()) and len(self.text_bits) > 0:
+        if (self.hover_action is not None or self.click_action is not None) and len(bits_to_serialize) > 0:
             
             event_flag = True
 
@@ -319,22 +385,24 @@ class Text:
             new_text.hover_action = self.hover_action
             new_text.click_action = self.click_action
 
-            self.text_bits.insert(0, new_text)
-            self.text_bits.insert(0, Text(""))
+            bits_to_serialize.insert(0, new_text)
+            bits_to_serialize.insert(0, Text(""))
+
+        d: Dict[str, Union[dict, str, bool]] = {}
         
         if len(self.text) > 0 and event_flag is False:
 
-            d: Dict[str, Union[dict, str, bool]] = {"text": self.text}
+            d["text"] = self.text    
             
             if original_color != None:
 
                 if original_color != self.color:
-                    d["color"] = self.color.value
+                    d["color"] = format_color(self.color)
             else:
-                if self.color != Color.White: #TODO: Test this new bit
-                    d["color"] = self.color.value
+                if self.color != Color.WHITE:
+                    d["color"] = format_color(self.color)
                 
-                original_color = self.color
+                original_color = format_color(self.color)
 
             for style in set(self.styles): # Avoid duplicates
                 d[style.value] = True
@@ -346,33 +414,33 @@ class Text:
             self.format_hover_action(d, use_v1215_format)
             self.format_click_action(d, use_v1215_format)
 
-        if len(self.text_bits) > 0:
+        if len(bits_to_serialize) > 0:
             
             _list = []
-            parent_styles = []
+            inherited_parent_styles = []
             styles_flag = False # Default styles needs to be set still
 
             if len(self.text) > 0 and event_flag is False:
 
                 _list.append(d)
-                parent_styles = self.styles
+                inherited_parent_styles = self.styles
                 styles_flag = True
 
-            for item in self.text_bits:
+            for item in bits_to_serialize:
                 
                 if len(item.text) > 0 or event_flag is True:
 
                     _list.append(
                         item.to_json( # type: ignore
                             use_v1215_format=use_v1215_format,
-                            parent_styles=parent_styles,
+                            parent_styles=inherited_parent_styles,
                             original_color=original_color
                         )
                     )
 
                     if styles_flag is False:
 
-                        parent_styles = item.styles
+                        inherited_parent_styles = item.styles
                         styles_flag = True
             
             return _list
@@ -399,7 +467,7 @@ class Text:
         packets: List[Text] = []
         current_packet = Text("")
 
-        parts_to_process = []
+        parts_to_process: List[Text] = []
 
         if self.text:
             
@@ -468,7 +536,7 @@ class Text:
         Colors all this text in black
         """
 
-        return self._set_same_color(Color.Black)
+        return self._set_same_color(Color.BLACK)
     
 
     def dark_blue(self) -> "Text":
@@ -476,7 +544,7 @@ class Text:
         Colors all this text in dark_blue
         """
          
-        return self._set_same_color(Color.DarkBlue)
+        return self._set_same_color(Color.DARK_BLUE)
     
 
     def dark_green(self) -> "Text":
@@ -484,7 +552,7 @@ class Text:
         Colors all this text in dark_green
         """
         
-        return self._set_same_color(Color.DarkGreen)
+        return self._set_same_color(Color.DARK_GREEN)
     
 
     def dark_aqua(self) -> "Text":
@@ -492,7 +560,7 @@ class Text:
         Colors all this text in dark_aqua
         """
         
-        return self._set_same_color(Color.DarkAqua)
+        return self._set_same_color(Color.DARK_AQUA)
     
 
     def dark_red(self) -> "Text":
@@ -500,7 +568,7 @@ class Text:
         Colors all this text in dark_red
         """
         
-        return self._set_same_color(Color.DarkRed)
+        return self._set_same_color(Color.DARK_RED)
     
 
     def dark_purple(self) -> "Text":
@@ -508,7 +576,7 @@ class Text:
         Colors all this text in dark_purple
         """
         
-        return self._set_same_color(Color.DarkPurple)
+        return self._set_same_color(Color.DARK_PURPLE)
     
 
     def gold(self) -> "Text":
@@ -516,7 +584,7 @@ class Text:
         Colors all this text in gold
         """
         
-        return self._set_same_color(Color.Gold)
+        return self._set_same_color(Color.GOLD)
     
 
     def gray(self) -> "Text":
@@ -524,7 +592,7 @@ class Text:
         Colors all this text in gray
         """
         
-        return self._set_same_color(Color.Gray)
+        return self._set_same_color(Color.GRAY)
     
 
     def dark_gray(self) -> "Text":
@@ -532,7 +600,7 @@ class Text:
         Colors all this text in dark_gray
         """
         
-        return self._set_same_color(Color.DarkGray)
+        return self._set_same_color(Color.DARK_GRAY)
     
 
     def blue(self) -> "Text":
@@ -540,7 +608,7 @@ class Text:
         Colors all this text in blue
         """
         
-        return self._set_same_color(Color.Blue)
+        return self._set_same_color(Color.BLUE)
     
 
     def green(self) -> "Text":
@@ -548,7 +616,7 @@ class Text:
         Colors all this text in green
         """
         
-        return self._set_same_color(Color.Green)
+        return self._set_same_color(Color.GREEN)
     
 
     def aqua(self) -> "Text":
@@ -556,7 +624,7 @@ class Text:
         Colors all this text in aqua
         """
         
-        return self._set_same_color(Color.Aqua)
+        return self._set_same_color(Color.AQUA)
     
 
     def red(self) -> "Text":
@@ -564,7 +632,7 @@ class Text:
         Colors all this text in red
         """
         
-        return self._set_same_color(Color.Red)
+        return self._set_same_color(Color.RED)
     
 
     def light_purple(self) -> "Text":
@@ -572,7 +640,7 @@ class Text:
         Colors all this text in ligth_purple
         """
         
-        return self._set_same_color(Color.LightPurple)
+        return self._set_same_color(Color.LIGHT_PURPLE)
     
 
     def yellow(self) -> "Text":
@@ -580,7 +648,7 @@ class Text:
         Colors all this text in yellow
         """
         
-        return self._set_same_color(Color.Yellow)
+        return self._set_same_color(Color.YELLOW)
     
 
     def white(self) -> "Text":
@@ -588,36 +656,36 @@ class Text:
         Colors all this text in white
         """
         
-        return self._set_same_color(Color.White)
+        return self._set_same_color(Color.WHITE)
 
 
     def obfuscated(self) -> "Text":
         
-        self.styles.append(Style.Obfuscated)
+        self.styles.append(Style.OBFUSCATED)
         return self
     
 
     def bold(self) -> "Text":
         
-        self.styles.append(Style.Bold)
+        self.styles.append(Style.BOLD)
         return self
     
 
     def strikethrough(self) -> "Text":
         
-        self.styles.append(Style.Strikethrough)
+        self.styles.append(Style.STRIKETHROUGH)
         return self
     
 
     def underlined(self) -> "Text":
         
-        self.styles.append(Style.Underlined)
+        self.styles.append(Style.UNDERLINED)
         return self
     
 
     def italic(self) -> "Text":
         
-        self.styles.append(Style.Italic)
+        self.styles.append(Style.ITALIC)
         return self
 
     
@@ -636,10 +704,10 @@ class Text:
         Colors the text with the gradient between the given colors
         """
         
-        colors = [
-            Color.Black, Color.Blue, Color.DarkGreen, Color.DarkAqua, Color.DarkRed, Color.DarkPurple,
-            Color.Gold, Color.Gray, Color.DarkGray, Color.Blue, Color.Green, Color.Aqua, Color.Red,
-            Color.LightPurple, Color.Yellow, Color.White
+        colors = [ # type: ignore
+            # Color.Black, Color.Blue, Color.DarkGreen, Color.DarkAqua, Color.DarkRed, Color.DarkPurple,
+            # Color.Gold, Color.Gray, Color.DarkGray, Color.Blue, Color.Green, Color.Aqua, Color.Red,
+            # Color.LightPurple, Color.Yellow, Color.White
         ]
 
         steps = colors.index(end_color) - colors.index(start_color)
@@ -689,7 +757,7 @@ class Text:
         self,
         suggest_command: Optional[str] = None,
         run_command: Optional[str] = None,
-        run_function: Optional[Callable] = None,
+        run_function: Optional[ClickCallback] = None,
         open_url: Optional[str] = None,
         copy_to_clipboard: Optional[str] = None,
         change_page: Optional[str] = None,
@@ -727,107 +795,107 @@ class Text:
 
 def black(text: str) -> Text:
     
-    return Text(text, Color.Black)
+    return Text(text, Color.BLACK)
 
 
 def dark_blue(text: str) -> Text:
     
-    return Text(text, Color.DarkBlue)
+    return Text(text, Color.DARK_BLUE)
 
 
 def dark_green(text: str) -> Text:
     
-    return Text(text, Color.DarkGreen)
+    return Text(text, Color.DARK_GREEN)
 
 
 def dark_aqua(text: str) -> Text:
     
-    return Text(text, Color.DarkAqua)
+    return Text(text, Color.DARK_AQUA)
 
 
 def dark_red(text: str) -> Text:
     
-    return Text(text, Color.DarkRed)
+    return Text(text, Color.DARK_RED)
 
 
 def dark_purple(text: str) -> Text:
     
-    return Text(text, Color.DarkPurple)
+    return Text(text, Color.DARK_PURPLE)
 
 
 def gold(text: str) -> Text:
     
-    return Text(text, Color.Gold)
+    return Text(text, Color.GOLD)
 
 
 def gray(text: str) -> Text:
     
-    return Text(text, Color.Gray)
+    return Text(text, Color.GRAY)
 
 
 def dark_gray(text: str) -> Text:
     
-    return Text(text, Color.DarkGray)
+    return Text(text, Color.DARK_GRAY)
 
 
 def blue(text: str) -> Text:
     
-    return Text(text, Color.Blue)
+    return Text(text, Color.BLUE)
 
 
 def green(text: str) -> Text:
     
-    return Text(text, Color.Green)
+    return Text(text, Color.GREEN)
 
 
 def aqua(text: str) -> Text:
     
-    return Text(text, Color.Aqua)
+    return Text(text, Color.AQUA)
 
 
 def red(text: str) -> Text:
     
-    return Text(text, Color.Red)
+    return Text(text, Color.RED)
 
 
 def light_purple(text: str) -> Text:
     
-    return Text(text, Color.LightPurple)
+    return Text(text, Color.LIGHT_PURPLE)
 
 
 def yellow(text: str) -> Text:
     
-    return Text(text, Color.Yellow)
+    return Text(text, Color.YELLOW)
 
 
 def white(text: str) -> Text:
     
-    return Text(text, Color.White)
+    return Text(text, Color.WHITE)
 
 
 def obfuscated(text: str) -> Text:
     
-    return Text(text, Color.White, Style.Obfuscated)
+    return Text(text, Color.WHITE, Style.OBFUSCATED)
 
 
 def bold(text: str) -> Text:
     
-    return Text(text, Color.White, Style.Bold)
+    return Text(text, Color.WHITE, Style.BOLD)
 
 
 def strikethrough(text: str) -> Text:
     
-    return Text(text, Color.White, Style.Strikethrough)
+    return Text(text, Color.WHITE, Style.STRIKETHROUGH)
 
 
 def underlined(text: str) -> Text:
     
-    return Text(text, Color.White, Style.Underlined)
+    return Text(text, Color.WHITE, Style.UNDERLINED)
 
 
 def italic(text: str) -> Text:
     
-    return Text(text, Color.White, Style.Italic)
+    return Text(text, Color.WHITE, Style.ITALIC)
 
 
 def link(
@@ -854,7 +922,7 @@ def link(
 def button(
     text: str,
     sound: Optional[str] = None,
-    **hover_and_click_action: Union[str, Text, Callable],
+    **hover_and_click_action: Union[str, Text, ClickCallback],
 ) -> Text:
     """
     Creates a Text with the given text sorrounded by braces and underlined.
@@ -864,28 +932,14 @@ def button(
 
     btn = underlined(text=f"[{text}]")
 
-    HOVER_ACTIONS = [
-        "show_text",
-        "show_item",
-        "show_entity"
-    ]
-
-    CLICK_ACTIONS = [
-        "suggest_command",
-        "run_command",
-        "run_function",
-        "open_url",
-        "copy_to_clipboard",
-        "open_file"
-    ]
-
     assert len(hover_and_click_action) <= 2
 
-    def _get_action_name(action_names: List) -> Optional[str]:
+    def _get_action_name(action_names: List[str]) -> Optional[str]:
             
         for item in hover_and_click_action:
             if item in action_names:
                 return item
+        return None
 
     hover = _get_action_name(HOVER_ACTIONS)
 
@@ -898,18 +952,20 @@ def button(
 
         fn = hover_and_click_action[click]
 
-        if sound is not None:
+        if sound is not None and callable(fn) and not isinstance(fn, Text):
+
+            callback = cast(ClickCallback, fn)
 
             def _fn(c: "Context"):
 
                 c.server.execute(f"/execute at {c.player} run playsound {sound} ambient {c.player}")
 
                 try:
-                    fn(c)
+                    callback(c)
                 except Exception as e:
                     raise e
             
-            btn.click(**{click: _fn}) # type: ignore
+            btn.click(run_function=_fn)
 
         else:
             btn.click(**{click: fn}) # type: ignore
@@ -930,7 +986,7 @@ def suggester(
 
     for i, txt in enumerate(text):
         
-        t = " ".join(text[0:i+2])
+        t = " ".join(text[:i+1])
 
         s = underlined(txt)
 
@@ -951,6 +1007,14 @@ def quoted(text: Union[str, Text]) -> Union[str, Text]:
     """
 
     if isinstance(text, Text):
-        return Text("`", text.color) + text + "`"
+
+        if len(text.text_bits) > 0:
+            
+            text.text = "`" + text.text
+            text.text_bits[-1].text += "`"
+        else:
+            text.text = f"`{text.text}`"
+
+        return text
     
-    return "`" + "`"
+    return f"`{text}`"

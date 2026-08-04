@@ -11,14 +11,14 @@ class Action(Serializable):
     """
 
 
-    __type: Field[str, "type"]
+    _type: Field[str, "type"]
 
 
     def __init__(
         self,
         type: str
-    ) -> "Action":
-        self.__type = type
+    ) -> None:
+        self._type = type
 
 
 class OpenUrl(Action):
@@ -30,7 +30,7 @@ class OpenUrl(Action):
     def __init__(
         self,
         url: str
-    ) -> "OpenUrl":
+    ) -> None:
 
         super().__init__("open_url")
         self.url = url
@@ -45,7 +45,7 @@ class RunCommand(Action):
     def __init__(
         self,
         command: str
-    ) -> "RunCommand":
+    ) -> None:
 
         super().__init__("run_command")
         self.command = command
@@ -60,7 +60,7 @@ class SuggestCommand(Action):
     def __init__(
         self,
         command: str
-    ) -> "SuggestCommand":
+    ) -> None:
 
         super().__init__("suggest_command")
         self.command = command
@@ -75,7 +75,7 @@ class ChangePage(Action):
     def __init__(
         self,
         page: int
-    ) -> "ChangePage":
+    ) -> None:
 
         super().__init__("change_page")
         self.page = page
@@ -90,7 +90,7 @@ class CopyToClipboard(Action):
     def __init__(
         self,
         value: str
-    ) -> "CopyToClipboard":
+    ) -> None:
 
         super().__init__("copy_to_clipboard")
         self.value = value
@@ -105,7 +105,7 @@ class ShowDialog(Action):
     def __init__(
         self,
         dialog: BaseDialog
-    ) -> "ShowDialog":
+    ) -> None:
 
         super().__init__("show_dialog")
         self.dialog = dialog
@@ -122,7 +122,7 @@ class Custom(Action):
         self,
         id: str,
         payload: str
-    ) -> "Custom":
+    ) -> None:
 
         super().__init__("custom")
         self.id = id
@@ -138,7 +138,7 @@ class DynamicRunCommand(Action):
     def __init__(
         self,
         template: str
-    ) -> "DynamicRunCommand":
+    ) -> None:
 
         super().__init__("dynamic/run_command")
         self.template = template
@@ -155,7 +155,7 @@ class DynamicCustom(Action):
         self,
         additions: Dict,
         id: str
-    ) -> "DynamicCustom":
+    ) -> None:
 
         super().__init__("dynamic/custom")
         self.additions = additions

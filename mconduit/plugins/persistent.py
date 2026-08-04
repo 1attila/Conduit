@@ -6,10 +6,10 @@ import json
 import os
 
 
-from .. import constants
+from mconduit import constants
 
 if TYPE_CHECKING:
-    from .plugin import Plugin
+    from mconduit.plugins.plugin import Plugin
 
 
 P = TypeVar("P", bound="Persistent")

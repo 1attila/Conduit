@@ -1,7 +1,8 @@
-from .._types import Message
-from ..server import Server
+from mconduit._types import Message
+from mconduit.server import Server
+from mconduit.text import Text
 
-from .component import BaseComponent
+from mconduit.ui.component import BaseComponent
 
 
 class Label(BaseComponent):
@@ -10,18 +11,18 @@ class Label(BaseComponent):
     """
 
 
-    __text: Message
+    _text: Message
 
 
-    def __init__(self, text: Message="") -> "Label":
+    def __init__(self, text: Message = "") -> None:
         """
         Creates a label
         """
 
         super().__init__()
 
-        self.__text = text
-        self.__renderer.edit_data("text", text)
+        self._text = text
+        self._renderer.edit_data("text", text)
 
     
     @property
@@ -30,11 +31,15 @@ class Label(BaseComponent):
         Text displayed by this label
         """
 
-        return self.__text
+        return self._text
 
 
     @text.setter
     def text(self, value: Message):
         
-        self.__text = value
-        self.__renderer.edit_data("text", value)
+        self._text = value
+
+        if isinstance(value, Text):
+            value = Text.__str__(self._renderer._server.is_v1_21_5)
+        
+        self._renderer.edit_data("text", value)

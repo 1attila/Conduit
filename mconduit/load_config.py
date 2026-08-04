@@ -5,16 +5,16 @@ import shutil
 import json
 import os
 
-from .conduit_config import (
+from mconduit.conduit_config import (
     HandlerConfig,
     ServerRunnerConfig,
     RconConfig,
     ResourcePackConfig,
     MachineConfig
 )
-from .config_setup import generate_rcon_password
-from .server_api import Properties
-from .constants import CONDUIT_PATH
+from mconduit.config_setup import generate_rcon_password
+from mconduit.server_api import Properties
+from mconduit.constants import CONDUIT_PATH
 
 
 logger = logging.getLogger("mconduit-config-syncer")

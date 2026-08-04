@@ -2,7 +2,7 @@ from typing import Optional, TYPE_CHECKING
 import parse
 
 if TYPE_CHECKING:
-    from ..server import Server
+    from mconduit.server import Server
 
 
 def get_gamerule_value(server: "Server", gamerule: str) -> Optional[bool]:
@@ -17,3 +17,5 @@ def get_gamerule_value(server: "Server", gamerule: str) -> Optional[bool]:
         value = parsed["value"]
 
         return True if value == "true" else False
+
+    return None

@@ -4,14 +4,14 @@
 #### A tool to control multiple Minecraft servers with Python!
 """
 
-from .build_handler import build_handler
-from .handler import Handler
-from .server import Server
-from .event import Event
-from .load_config import load_config, load_server_config
-from .conduit_config import HandlerConfig, ServerRunnerConfig
-from .context import Context
-from .enums import(
+from mconduit.build_handler import build_handler
+from mconduit.handler import Handler
+from mconduit.server import Server
+from mconduit.event import Event
+from mconduit.load_config import load_config, load_server_config
+from mconduit.conduit_config import HandlerConfig, ServerRunnerConfig
+from mconduit.context import Context
+from mconduit.enums import(
     Color,
     At,
     Selector,
@@ -22,9 +22,10 @@ from .enums import(
     Gamemode,
     Dimension,
     Difficulty,
-    Sort
+    Sort,
+    SoundType
 )
-from ._types import (
+from mconduit._types import (
     Entity,
     Location,
     Message,
@@ -35,14 +36,28 @@ from ._types import (
     Vec3d,
     Item,
     Coordinate,
-    relative
+    relative,
+    EventFunc
 )
-from .json import Serializable, Field
-from . import text as text
-from . import utils as utils
-from . import plugins as plugins
-from . import sound as sound
-from . import world as world
+from mconduit.world import (
+    WorldSnapshot,
+    WorldReader,
+    CachedWorldReader,
+    Region,
+    Chunk,
+    SubChunk,
+    Block,
+    Overworld,
+    Nether,
+    End
+)
+from mconduit.json import Serializable, Field
+from mconduit.scoreboard import Scoreboard, Objective, DisplaySlot, Team
+from mconduit import text as text
+from mconduit import utils as utils
+from mconduit import plugins as plugins
+from mconduit import sound as sound
+from mconduit import perms as perms
 
 
 __all__ = [
@@ -50,12 +65,14 @@ __all__ = [
     "Event",
     "load_config", "load_server_config",
     "HandlerConfig", "ServerRunnerConfig",
-    "Context", "Color", "At", "Selector", "S", "P", "E", "R", "Gamemode", "Dimension", "Difficulty", "Sort",
+    "Context", "Color", "At", "Selector", "S", "P", "E", "R", "Gamemode", "Dimension", "Difficulty", "Sort", "SoundType",
     "text",
-    "Entity", "Location", "Message", "Mob", "Player", "Rot", "Direction", "Vec3d", "Item", "Coordinate", "relative",
+    "Entity", "Location", "Message", "Mob", "Player", "Rot", "Direction", "Vec3d", "Item", "Coordinate", "relative", "EventFunc",
     "utils",
     "plugins",
     "sound",
     "Serializable", "Field",
-    "world"
+    "WorldSnapshot", "WorldReader", "CachedWorldReader", "Region", "Chunk", "SubChunk", "Block", "Overworld", "Nether", "End",
+    "perms",
+    "Scoreboard", "Objective", "DisplaySlot", "Team"
 ]

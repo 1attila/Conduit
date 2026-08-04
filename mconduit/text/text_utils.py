@@ -1,8 +1,10 @@
+# type: ignore
+
 from typing import List, Dict, Tuple, Union, Optional
-from .text import Text
-from .style import Style
-from .characters import pixel_len
-from ..enums import Color
+from mconduit.text.text import Text
+from mconduit.text.style import Style
+from mconduit.text.characters import pixel_len
+from mconduit.enums.color import Color
 
 
 def space_of_width(
@@ -90,7 +92,9 @@ def _approx_space_without_bold(width: int) -> Tuple[int, int, int]:
 
 def dict_to_tuple(d: Dict) -> Tuple:
 
-    values = [*d.keys()].sort()
+    values = [*d.keys()]
+    values.sort()
+    
     return tuple(values)
 
 

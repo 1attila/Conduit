@@ -5,6 +5,10 @@ from ..to_json import to_json
 
 
 class MultiLine:
+    """
+
+    """
+    
     max_lines: Field[Optional[int]]
     height: Field[Optional[int]]
 
@@ -12,9 +16,9 @@ class MultiLine:
     def __init__(
         self,
         *,
-        max_lines: Optional[int]=None,
-        heigth: Optional[int]=None
-    ) -> "MultiLine":
+        max_lines: Optional[int] = None,
+        heigth: Optional[int] = None
+    ) -> None:
         
         self.max_lines = max_lines
         self.heigth = heigth

@@ -1,6 +1,6 @@
 from typing import TypeAlias
 
-from ..text import Text
+from mconduit.text.text import Text
 
 
 Message: TypeAlias = str | Text

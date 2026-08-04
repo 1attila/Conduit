@@ -1,9 +1,9 @@
 import enum
 
 
-class Style(enum.Enum):
-    Obfuscated = "obfuscated"
-    Bold = "bold"
-    Strikethrough = "strikethrough"
-    Underlined = "underlined"
-    Italic = "italic"
+class Style(enum.StrEnum):
+    OBFUSCATED    = "obfuscated"
+    BOLD          = "bold"
+    STRIKETHROUGH = "strikethrough"
+    UNDERLINED    = "underlined"
+    ITALIC        = "italic"

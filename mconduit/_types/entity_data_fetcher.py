@@ -1,23 +1,31 @@
-from typing import Optional, Dict, TYPE_CHECKING
-import parse
-import json
-import re
+from __future__ import annotations
+from typing import TypeVar, Type, Optional, Dict, Any, overload, cast, TYPE_CHECKING
+import nbtlib # type: ignore[import-untyped]
+import parse # type: ignore[import-untyped]
 
-from ..enums import Dimension, Gamemode
+from mconduit.enums import Dimension, Gamemode
 from .location import Location
 from .vec3d import Vec3d
 
 if TYPE_CHECKING:
-    from ..server import Server
+    from mconduit.server import Server
 
 
 BASE_FORMATTER = r"{player} has the following entity data: {data}"
-DIMENSION_FORMATTER = r'"minecraft:{dimension}"'
+DIMENSION_FORMATTER = r'minecraft:{dimension}'
 LOCATION_FORMATTER = r"{{pos: [I; {x}, {y}, {z}], dimension: {dimension}}}"
+
+_T = TypeVar("_T")
+
+
+class ParsingError(Exception):
+    """
+    Unable to parse the string as expected
+    """
 
 
 def _parse_dimension(data: str) -> Dimension:
-    
+
     if parsed := parse.parse(DIMENSION_FORMATTER, data):
         
         data = parsed["dimension"]
@@ -25,83 +33,76 @@ def _parse_dimension(data: str) -> Dimension:
         match data:
 
             case "the_end":
-                return Dimension.End
+                return Dimension.END
             
             case "overworld":
-                return Dimension.Overworld
+                return Dimension.OVERWORLD
             
             case "the_nether":
-                return Dimension.Nether
+                return Dimension.NETHER
+
+    raise ParsingError
             
 
-def _parse_gamemode(data: str) -> Gamemode:
+def _parse_gamemode(gamemode_id: int) -> Gamemode:
 
-    match data:
-        case "1":
-            return Gamemode.Creative
+    match gamemode_id:
+        case 1:
+            return Gamemode.CREATIVE
         
-        case "0":
-            return Gamemode.Survival
+        case 0:
+            return Gamemode.SURVIVAL
         
-        case "3":
-            return Gamemode.Spectator
+        case 3:
+            return Gamemode.SPECTATOR
         
-        case "2":
-            return Gamemode.Adventure
+        case 2:
+            return Gamemode.ADVENTURE
+
+    raise ParsingError
 
 
-def _parse_location(data: str) -> Optional[Location]:
-    
-    if parsed := parse.parse(LOCATION_FORMATTER, data):
+def _parse_location(data: nbtlib.Compound) -> Optional[Location]:
         
-        x, y, z = parsed["x"], parsed["y"], parsed["z"]
+    pos = _cast_data(data["pos"], list)
 
-        location = Location()
-        location.pos = Vec3d(x, y, z)
-        location.dimension = _parse_dimension(parsed["dimension"])
+    location = Location()
+    location.pos = Vec3d(*pos)
+    location.dimension = _parse_dimension(data["dimension"])
 
-        return location
+    return location
 
 
-def _cast_data(data: str, _type: object) -> object:
+def _cast_data(data: Any, _type: Type[_T]) -> _T:
     """
     Utility function that can be used recursively to unpack and cast data
     """
     
     if _type is str:
-        return data
-
-    if isinstance(_type, (int, float, bool)):
-        
-        suffixes = ["b", "f", "d", "s"]
-
-        for suffix in suffixes:
-            if data.endswith(suffix):
-                return _type(data[0:-1]) # type: ignore
-
-        return _type(data) # type: ignore
-
-    if isinstance(_type, Dict):
-
-        data = data.replace("count:", '"count":') # item, inventory
-        data = data.replace("Slot:", '"Slot":') # inventory
-        data = data.replace("id:", '"id":') # item, inventory
-        
-        data = re.sub(r'"Slot": (\d+)b', r'"Slot": "\1"', data)
-
-        return json.loads(data)
-
-    if isinstance(_type, list):
-        return data[1:-1].split(", ")
+        return cast(_T, data)
     
     if _type is Dimension:
-        return _parse_dimension(data)
+        return cast(_T, _parse_dimension(data))
 
     if _type is Gamemode:
-        return _parse_gamemode(data)
+        return cast(_T, _parse_gamemode(data))
     
     if _type is Location:
-        return _parse_location(data)
+        return cast(_T, _parse_location(data))
+
+    return cast(_T, cast(Any, _type)(data))
+
+
+class UnableToFetchData(Exception):
+    """
+    Probably because of bad Rcon connection, attempt again
+    """
+
+
+class AttributeNotFound(Exception):
+    """
+    The attribute is not present in the nbt, it may be optional!
+    """
 
 
 class EntityDataFetcher:
@@ -111,38 +112,88 @@ class EntityDataFetcher:
 
 
     _name: str
-    _server: "Server"
+    _server: Server
+    _nbt_cache: Optional[Dict[str, Any]]
 
+
+    def __init__(
+        self,
+        name: str,
+        server: Server
+    ) -> None:
+
+        self._name = name
+        self._server = server
+        self._nbt_cache = None
+
+
+    def clean_cache(self) -> None:
+        """
+        Empties the nbt cache
+        """
+
+        self._nbt_cache = None
+
+    
+    def _get_full_nbt(self) -> None:
+        """
+        Fetches the full nbt via Rcon, if cache is empty
+        """
+
+        if self._nbt_cache is not None:
+            return None
+
+        response = self._server.execute(f"data get entity {self._name}")
+
+        if not isinstance(response, str) or response.startswith("Found no elements"): # Rcon connection failed
+
+            self._nbt_cache = {}
+            return None
+
+        parsed = parse.parse(BASE_FORMATTER, response)
+
+        if parsed is None: # Data fetching fails with carpet bots smh
+            raise RuntimeError("Unable to parse the entity data")
+
+        data = parsed["data"]
+        
+        self._nbt_cache = nbtlib.parse_nbt(data).unpack()
+        
+        return None
+
+
+    @overload
+    def _fetch(
+        self,
+        attribute: str
+    ) -> str:
+        ...
+
+
+    @overload
+    def _fetch(
+        self,
+        attribute: str,
+        _type: Type[_T]
+    ) -> _T:
+        ...
+    
     
     def _fetch(
         self,
         attribute: str,
-        _type: object = str
-    ) -> Optional[object]:
+        _type: Any = str
+    ) -> Any:
         """
         Fetches a specific player/mob/entity attribute and casts it automatically with the given type
         """
+
+        self._get_full_nbt()
+
+        if self._nbt_cache is None:
+            raise UnableToFetchData
         
-        response = self._server.execute(f"/data get entity {self._name} {attribute}")
-        
-        if not response: # Rcon connection failed
-            return # type: ignore
+        if attribute not in self._nbt_cache:
+            raise AttributeNotFound
 
-        if not response.startswith("Found no elements matching "): # type: ignore
-            
-            parsed = parse.parse(BASE_FORMATTER, response)
-            
-            if parsed is None: # data fetching fails with carpet bots smh
-                return # type: ignore
-
-            data = parsed["data"]
-            
-            try:
-                data = _cast_data(str(data).strip(), _type)
-            except:
-                return # type: ignore
-
-            return data
-
-        if _type is bool:
-            return False
+        return _cast_data(self._nbt_cache[attribute], _type)

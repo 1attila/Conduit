@@ -14,7 +14,7 @@ class BaseInput(ABC, Serializable):
     Do not use, go for Boolean, MultiLine, NumberRange, Option, SingleOption and Text instead!
     """
 
-    __type: Field[InputType, "type"]
+    _type: Field[InputType, "type"]
     key: Field[str]
     label: Field[Text]
 
@@ -24,9 +24,9 @@ class BaseInput(ABC, Serializable):
         type: InputType,
         key: str,
         label: Text
-    ) -> "BaseInput":
+    ) -> None:
         
-        self.__type = type
+        self._type = type
         self.key = key
         self.label = label
 
@@ -34,7 +34,7 @@ class BaseInput(ABC, Serializable):
     def to_json(self) -> Dict[str, Any]:
 
         return {
-            "type": self.__type,
+            "type": self._type,
             "key": self.key,
             "label": self.label
         }

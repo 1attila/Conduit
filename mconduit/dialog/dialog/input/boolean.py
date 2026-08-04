@@ -22,13 +22,13 @@ class Boolean(BaseInput):
         key: str,
         label: Text,
         *,
-        initial: bool=False,
-        on_true: str="true",
-        on_false: str="false"
-    ) -> "Boolean":
+        initial: bool = False,
+        on_true: str = "true",
+        on_false: str = "false"
+    ) -> None:
         
         super().__init__(
-            type=InputType.Boolean,
+            type=InputType.BOOLEAN,
             key=key,
             label=label
         )

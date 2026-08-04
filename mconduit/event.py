@@ -2,7 +2,7 @@ from typing import List, Callable, TYPE_CHECKING
 import enum
 
 if TYPE_CHECKING:
-    from .server import Server
+    from mconduit.server import Server
 
 
 class Event(enum.Enum):
@@ -19,43 +19,44 @@ class Event(enum.Enum):
     """
 
     # Player
-    PlayerJoin           = enum.auto()
-    PlayerLeft           = enum.auto()
-    PlayerDeath          = enum.auto()
-    PlayerChat           = enum.auto()
-    PlayerCommand        = enum.auto()
-    PlayerKicked         = enum.auto()
-    PlayerOpped          = enum.auto()
-    PlayerDeopped        = enum.auto()
-    PlayerWhitelisted    = enum.auto()
-    PlayerUnwhitelisted  = enum.auto()
-    PlayerAdvancement    = enum.auto()
-    PlayerChallenge      = enum.auto()
-    SetScoreboardValue   = enum.auto()
-    AddScoreboardValue   = enum.auto()
-    SubScoreboardValue   = enum.auto()
-    ResetScoreboardValue = enum.auto()
-    PlayerTrigger        = enum.auto()
-    PlayerItemGive       = enum.auto()
-    PlayerSetGamemode    = enum.auto()
-    PlayerSummonedEntity = enum.auto()
-    PlayerKilledPlayer   = enum.auto()
-    PlayerShift          = enum.auto()
-    PlayerRigthClick     = enum.auto()
-    PlayerLeftClick      = enum.auto()
+    PLAYER_JOIN            = enum.auto()
+    PLAYER_LEFT            = enum.auto()
+    PLAYER_DEATH           = enum.auto()
+    PLAYER_CHAT            = enum.auto()
+    PLAYER_COMMAND         = enum.auto()
+    PLAYER_KICKED          = enum.auto()
+    PLAYER_OPPED           = enum.auto()
+    PLAYER_DEOPPED         = enum.auto()
+    PLAYER_WHITELISTED     = enum.auto()
+    PLAYER_UNWHITELISTED   = enum.auto()
+    PLAYER_ADVANCEMENT     = enum.auto()
+    PLAYER_CHALLENGE       = enum.auto()
+    SET_SCOREBOARD_VALUE   = enum.auto()
+    ADD_SCOREBOARD_VALUE   = enum.auto()
+    SUB_SCOREBOARD_VALUE   = enum.auto()
+    RESET_SCOREBOARD_VALUE = enum.auto()
+    PLAYER_TRIGGER         = enum.auto()
+    PLAYER_ITEM_GIVE       = enum.auto()
+    PLAYER_SET_GAMEMODE    = enum.auto()
+    PLAYER_SUMMONED_ENTITY = enum.auto()
+    PLAYER_KILLED_PLAYER   = enum.auto()
+    PLAYER_SAVED_THE_GAME  = enum.auto()
+    PLAYER_SHIFT           = enum.auto()
+    PLAYER_RIGHT_CLICK     = enum.auto()
+    PLAYER_LEFT_CLICK      = enum.auto()
 
     # Server
-    ServerStart          = enum.auto()
-    ServerStop           = enum.auto()
-    GameSaved            = enum.auto()
-    OnLog                = enum.auto()
+    SERVER_START           = enum.auto()
+    SERVER_STOP            = enum.auto()
+    GAME_SAVED             = enum.auto()
+    ON_LOG                 = enum.auto()
 
     # Conduit
-    ConduitStart         = enum.auto()
-    ConduitStop          = enum.auto()
+    CONDUIT_START          = enum.auto()
+    CONDUIT_STOP           = enum.auto()
     
     # Misc
-    TextClick            = enum.auto() # This should be newer used!
+    TEXT_CLICK             = enum.auto() # This should be newer used!
 
 
 class EventListener:
@@ -64,16 +65,19 @@ class EventListener:
     """
 
 
-    __server: "Server"
-    __detach_flag: bool # Used in EventHandler
+    _server: "Server"
+    _detach_flag: bool # Used in EventHandler
     fallbacks: List[Callable]
     enabled: bool
 
 
-    def __init__(self, server: "Server") -> None:
+    def __init__(
+        self,
+        server: "Server"
+    ) -> None:
         
-        self.__server = server
-        self.__detach_flag = False
+        self._server = server
+        self._detach_flag = False
         self.enabled = True
         self.fallbacks = []
 
@@ -115,7 +119,7 @@ class EventListener:
         Removes this listeners from the server listeners
         """
 
-        self.__detach_flag = True
+        self._detach_flag = True
 
 
     @property
@@ -124,4 +128,19 @@ class EventListener:
         The server where this listener is running
         """
 
-        return self.__server
+        return self._server
+
+
+SCOREBOARDS_EVENTS = [
+    Event.SET_SCOREBOARD_VALUE,
+    Event.ADD_SCOREBOARD_VALUE,
+    Event.SUB_SCOREBOARD_VALUE,
+    Event.RESET_SCOREBOARD_VALUE
+]
+
+SERVER_EVENTS = [
+    Event.SERVER_START,
+    Event.SERVER_STOP,
+    Event.GAME_SAVED,
+    Event.ON_LOG
+]

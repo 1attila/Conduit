@@ -24,16 +24,16 @@ class DialogList(BaseDialog):
         inputs: List[BaseInput] | None = None,
         can_close_with_escape: bool = True,
         pause: bool = True,
-        after_action: AfterAction = AfterAction.Close,
+        after_action: AfterAction = AfterAction.CLOSE,
         *,
         dialogs: List[BaseDialog],
         exit_action: None,
         columns: int = 2,
         button_width: int = 150
-    ) -> "DialogList":
+    ) -> None:
         
         super().__init__(
-            type=DialogType.Confirmation,
+            type=DialogType.CONFIRMATION,
             title=title,
             external_title=external_title,
             body=body,

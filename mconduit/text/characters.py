@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
-from .style import Style
-from .text import Text
+from mconduit.text.style import Style
+from mconduit.text.text import Text
 
 if TYPE_CHECKING:
-    from .._types import Message
+    from mconduit._types.message import Message
 
 # Bold: 84 -> 98
 """
@@ -46,6 +46,10 @@ MINECRAFT_FONT_WIDTHS = {
 WIDTHS = [14, 21, 28, 42, 56, 63, 72, 84, 98, 112, 126, 140]
 
 
+def _normal_len(text: str) -> int:
+    return sum([MINECRAFT_FONT_WIDTHS.get(item, 84) for item in text])
+
+
 def pixel_len(text: "Message") -> int:
     """
     Returns the lenght of the message in pixels
@@ -54,17 +58,25 @@ def pixel_len(text: "Message") -> int:
     if isinstance(text, Text):
 
         l = 0
-
-        for t in [Text(text.text, text.color, *text.styles), *text.text_bits]:
             
-            if Style.Bold in t.styles:
+        if Style.BOLD in text.styles:
+                
+            for character in text.text:
 
-                normal_lens = [MINECRAFT_FONT_WIDTHS.get(item, 84) for item in t]
-                lens_ids = [WIDTHS.index(item) for item in normal_lens]
-                l += sum([WIDTHS[item + 1] for item in lens_ids])
-            else:
-                l += pixel_len(t.plain_text)
+                normal_len = MINECRAFT_FONT_WIDTHS.get(character, 84)
+
+                try:
+                    len_id = WIDTHS.index(normal_len)
+                    l += WIDTHS[len_id + 1] if len_id + 1 < len(WIDTHS) else WIDTHS[-1]
+
+                except ValueError:
+                    l += normal_len
+        else:
+            l = _normal_len(text.text)
+
+        for bit in text.text_bits:
+            l += pixel_len(bit)
 
         return l
 
-    return sum([MINECRAFT_FONT_WIDTHS.get(item, 84) for item in text])
+    return _normal_len(text)

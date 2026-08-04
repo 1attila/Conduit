@@ -7,7 +7,7 @@ from .rot import Rot, Direction
 from .vec3d import Vec3d
 from .item import Item
 from .coordinate import Coordinate, relative
-
+from .event_func import EventFunc
 
 __all__ = [
     "Entity",
@@ -18,5 +18,6 @@ __all__ = [
     "Rot", "Direction",
     "Vec3d",
     "Item",
-    "Coordinate", "relative"
+    "Coordinate", "relative",
+    "EventFunc"
 ]

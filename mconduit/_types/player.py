@@ -1,18 +1,21 @@
-from typing import Optional, Dict, TYPE_CHECKING
-import parse
+from __future__ import annotations
+from typing import Optional, Dict, List, TYPE_CHECKING
 import time
 
-from ..utils.scoreboards import get_score
-from ..enums.dimension import Dimension
-from ..enums.gamemode import Gamemode
+from mconduit.utils.scoreboards import get_score
+from mconduit.enums.dimension import Dimension
+from mconduit.enums.gamemode import Gamemode
+from mconduit.enums.color import Color
+from mconduit.text.text import Text
+from mconduit.perms.item import PermissionItem
+from .entity_data_fetcher import AttributeNotFound, _parse_dimension
 from .location import Location
 from .vec3d import Vec3d
 from .item import Item
 from .mob import Mob
 
 if TYPE_CHECKING:
-    from ..plugins.perms import Permission
-    from ..server import Server
+    from mconduit.scoreboard.team import Team
 
 
 class Player(Mob):
@@ -44,15 +47,6 @@ class Player(Mob):
     """
 
 
-    __permissions: Optional["Permission"] # Cached because fetch it every time requires time, it's used frequently and it's not modified a lot
-    
-
-    def __init__(self, name: str, server: "Server") -> None:
-
-        self.__permissions = None
-        super().__init__(name, server)
-
-
     @property
     def name(self) -> str:
         """
@@ -70,7 +64,7 @@ class Player(Mob):
         True if the entity is currently flying
         """
 
-        return self._fetch("flying", bool)
+        return bool(self._fetch("abilities", dict[str, bool])["flying"])
     
     
     @property
@@ -82,7 +76,7 @@ class Player(Mob):
         True only for creative mode
         """
         
-        return self._fetch("instabuild", bool)
+        return bool(self._fetch("abilities", dict[str, bool])["instabuild"])
     
 
     @property
@@ -96,7 +90,7 @@ class Player(Mob):
         Differs from the invulnerable attribute
         """
         
-        return self._fetch("invulnerable", bool)
+        return bool(self._fetch("abilities", dict[str, bool])["invulnerable"])
     
 
     @property
@@ -107,7 +101,7 @@ class Player(Mob):
         True for creative and survival
         """
         
-        return self._fetch("mayBuild", bool)
+        return bool(self._fetch("abilities", dict[str, bool])["mayBuild"])
     
 
     @property
@@ -118,7 +112,7 @@ class Player(Mob):
         True for creative and spectator
         """
         
-        return self._fetch("mayFly", bool)
+        return bool(self._fetch("abilities", dict[str, bool])["mayfly"])
     
 
     @property
@@ -131,14 +125,20 @@ class Player(Mob):
     
     
     @property
-    def echest_inventory(self) -> Dict[int, str]:
+    def echest_inventory(self) -> Dict[int, Item]:
         """
         Warning: Not following naming conventions.
 
         Ender chest inventory
         """
 
-        return self._fetch("EnderItems", Dict)
+        inv = self._fetch("EnderItems", list)
+        inventory = {}
+        
+        for item in inv:
+            inventory[int(item["Slot"])] = Item(item["id"], item["count"], item.get("components", None))
+
+        return inventory
     
 
     @property
@@ -149,8 +149,12 @@ class Player(Mob):
         It may not exist
         """
         
-        if s:= self._fetch("enteredNetherPosition"):
-            return Vec3d.from_string(s)
+        try:
+            s = self._fetch("enteredNetherPosition", dict)
+            return Vec3d(s["x"], s["y"], s["z"])
+        
+        except AttributeNotFound:
+            return None
         
     
     @property
@@ -197,11 +201,11 @@ class Player(Mob):
         Players inventory
         """
 
-        inv = self._fetch("Inventory", Dict) # `Dict` means load as json, so this returns a list in this case!
+        inv = self._fetch("Inventory", list)
         inventory = {}
-
+        
         for item in inv:
-            inventory[item["Slot"]] = Item(item["id"], item["count"])
+            inventory[item["Slot"]] = Item(item["id"], item["count"], item.get("components", None))
 
         return inventory
     
@@ -214,8 +218,12 @@ class Player(Mob):
         It may not exist
         """
 
-        return self._fetch("LastDeathLocation", Location)
-    
+        try:
+            return self._fetch("LastDeathLocation", Location)
+
+        except AttributeNotFound:
+            return None
+        
 
     @property
     def gamemode(self) -> Gamemode:
@@ -254,10 +262,13 @@ class Player(Mob):
         Selected item, if there is one
         """
 
-        si =  self._fetch("SelectedItem", Dict)
+        try:
+            si = self._fetch("SelectedItem", dict)
 
-        if si is not None:
-            return Item(si["id"], si["count"])
+            return Item(si["id"], si["count"], si.get("components", None))
+
+        except AttributeNotFound:
+            return None
     
     
     @property
@@ -281,18 +292,22 @@ class Player(Mob):
     
     
     @property
-    def spawn_dimension(self) -> Optional[Dimension]:
+    def respawn_dimension(self) -> Optional[Dimension]:
         """
         Player respawn dimension.
 
         It may not exist
         """
 
-        return self._fetch("SpawnDimension", Dimension)
+        try:
+            return _parse_dimension(self._fetch("respawn", dict)["dimension"])
+
+        except AttributeNotFound:
+            return None
     
     
     @property
-    def spawn_pos(self) -> Optional[Vec3d]:
+    def respawn_pos(self) -> Optional[Vec3d]:
         """
         Warning: Not following naming conventions.
 
@@ -301,10 +316,13 @@ class Player(Mob):
         It may not exist
         """
 
-        x, y, z = [self._fetch(f"Spawn{item}", int) for item in "XYZ"]
+        try:
+            s = self._fetch("respawn", dict)["pos"]
 
-        if x and y and z:
-            return Vec3d(x, y, z)
+            return Vec3d(*s)
+
+        except AttributeNotFound:
+            return None
     
 
     @property
@@ -343,9 +361,40 @@ class Player(Mob):
         """
 
         return self._fetch("XpTotal", int)
+
     
+    @property
+    def team(self) -> Optional[Team]:
+        """
+        Team the player is part of
+        """
+
+        for team in self._server.teams.values():
+
+            for player in team.players:
+
+                if player.name == self.name:
+                    return team
+
+        return None
+
 
     @property
+    def display_name(self) -> Text:
+        """
+        Name of the player with the team color
+        """
+
+        team = self.team
+
+        if team is not None and team.team_color is not None:
+            color = team.team_color
+        else:
+            color = Color.WHITE
+        
+        return Text(self.name, color) # NOTE: avoiding team prefix and suffix is volontary
+    
+
     def is_sneaking(self) -> bool:
         """
         Returns True if the player is sneaking.
@@ -353,11 +402,11 @@ class Player(Mob):
         Implemented using a double scoreboard check, it may take some time to process 
         """
 
-        initial_sneak = get_score(self.__server, self.__name, "mconduit-sneak") or 0
+        initial_sneak = get_score(self._server, self._name, "mconduit-sneak") or 0
         
         time.sleep(1 / 20) # 1 tick
 
-        current_sneak = get_score(self.__server, self.__name, "mconduit-sneak") or 0
+        current_sneak = get_score(self._server, self._name, "mconduit-sneak") or 0
 
         if current_sneak > initial_sneak:
             return True
@@ -366,35 +415,42 @@ class Player(Mob):
 
 
     @property
-    def permissions(self) -> "Permission":
+    def permissions(self) -> List[str]:
         """
         Player permissions, Guest as default
         """
 
-        if self.__permissions is not None:
-            return self.__permissions
+        return self._server.permission_manager.get_player_perms(self._name)
 
-        for perm, teams in self._server.permissions.items():
 
-            for team in teams:
-                data = self._server.execute(f"/team list {team}")
-                
-                data = parse.parse(r"Team [{team}] has {n} member(s): {members}", data)
+    def has_permissions(self, *permissions: PermissionItem | str) -> bool:
+        """
+        Returns True if this player has the given permissions
+        """
 
-                if data:
+        for permission in self.permissions:
 
-                    players = data["members"].split(", ")
+            if not self._server.permission_manager.has_permission(self._name, permission):
+                return False
 
-                    if self.name in players:
+        return True
+    
 
-                        self.__permissions = perm
-                        
-                        return perm
+    def has_permission(self, permission: PermissionItem | str) -> bool:
+        """
+        Returns True if this player has the given permission
+        """
 
-        self.__permissions = 0
-        
-        return 0 # Guest as default
+        return self.has_permissions(permission)
 
 
     def __str__(self) -> str:
         return self._name
+
+
+    def __eq__(self, other: object) -> bool:
+
+        if not isinstance(other, Player):
+            return False
+        
+        return self._name == other._name

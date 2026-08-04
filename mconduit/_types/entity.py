@@ -1,13 +1,13 @@
 from typing import Optional, List, TYPE_CHECKING
 from math import sin, cos, pi
 
-from .entity_data_fetcher import EntityDataFetcher
+from .entity_data_fetcher import EntityDataFetcher, AttributeNotFound
 from .vec3d import Vec3d
 from .rot import Rot
-from ..text import Text
+from mconduit.text.text import Text
 
 if TYPE_CHECKING:
-    from ..server import Server
+    from mconduit.server import Server
 
 
 class Entity(EntityDataFetcher):
@@ -23,36 +23,13 @@ class Entity(EntityDataFetcher):
     """
 
 
-    __name: str
-    __server: "Server"
-
-
     def __init__(
         self,
         name: str,
         server: "Server"
     ) -> None:
 
-        self.__name = name
-        self.__server = server
-
-
-    @property
-    def _name(self) -> str:
-        """
-        Entity name used in commands
-        """
-
-        return self.__name
-
-    
-    @property
-    def _server(self) -> "Server":
-        """
-        Entity server
-        """
-
-        return self.__server
+        super().__init__(name, server)
     
     
     @property
@@ -72,18 +49,27 @@ class Entity(EntityDataFetcher):
         It may not exist
         """
 
-        return Text.from_dict(self._fetch("CustomName"))
+        try:
+            custom_name = self._fetch("CustomName", dict)
+            return Text.from_dict(custom_name)
+        
+        except AttributeNotFound:
+            return None
     
     
     @property
-    def is_custom_name_visible(self) -> bool:
+    def is_custom_name_visible(self) -> Optional[bool]:
         """
         True if custom name is displayed above entity.
 
-        If custom name doesn't exist returns False
+        If custom name doesn't exist returns None
         """
 
-        return self._fetch("CustomNameVisible", bool)
+        try:
+            return self._fetch("CustomNameVisible", bool)
+
+        except AttributeNotFound:
+            return None
 
 
     @property
@@ -156,8 +142,9 @@ class Entity(EntityDataFetcher):
         Entity motion
         """
 
-        if motion := self._fetch("Motion"):
-            return Vec3d.from_string(motion)
+        motion = self._fetch("Motion", list)
+            
+        return Vec3d(*motion)
 
 
     @property
@@ -197,8 +184,9 @@ class Entity(EntityDataFetcher):
         Entity pos
         """
 
-        if pos := self._fetch("Pos"):
-            return Vec3d.from_string(pos)
+        pos = self._fetch("Pos", list)
+        
+        return Vec3d(*pos)
     
 
     @property
@@ -207,8 +195,9 @@ class Entity(EntityDataFetcher):
         Entity rotation
         """
 
-        if rot := self._fetch("Rotation"):
-            return Rot.from_string(rot)
+        rot = self._fetch("Rotation", list)
+        
+        return Rot(*rot)
     
 
     @property
@@ -233,7 +222,11 @@ class Entity(EntityDataFetcher):
         It may not exist
         """
 
-        return self._fetch("Tags", list)
+        try:
+            return self._fetch("Tags", list)
+
+        except AttributeNotFound:
+            return None
     
 
     @property
@@ -254,8 +247,8 @@ class Entity(EntityDataFetcher):
         """
         Entity UUID
         """
-
-        return self._fetch("UUID", str)
+        
+        return "-".join([hex(bit)[2:] for bit in self._fetch("UUID", list)])
 
 
     @property
@@ -265,9 +258,6 @@ class Entity(EntityDataFetcher):
         """
 
         rot = self.rotation
-
-        if rot is None:
-            return
         
         rot = rot * pi / 180
         

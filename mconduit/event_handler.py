@@ -1,11 +1,14 @@
+from __future__ import annotations
 from typing import Optional, Union, Callable, List, TYPE_CHECKING
+import traceback
+import copy
 
-from .event import Event, EventListener
-from .context import Context
-from .stdout_parser import ParsedResult
+from mconduit.event import Event, EventListener
+from mconduit.context import Context
+from mconduit.stdout_parser import ParsedResult, PLAYER_NOT_SUPPORTED
 
 if TYPE_CHECKING:
-    from .server import Server
+    from mconduit.server import Server
 
 
 class EventHandler:
@@ -14,60 +17,21 @@ class EventHandler:
     """
 
 
-    __listeners: List[Union[EventListener, Event]]
-    __server: "Server"
+    _listeners: List[Union[EventListener, Event]]
+    _server: Server
 
 
-    def __init__(self, server: "Server") -> None:
+    def __init__(self, server: Server) -> None:
 
-        self.__server = server
-        self.__listeners = []
+        self._server = server
+        self._listeners = []
         # TODO: Add the async listeners EXACTLY HERE
-        self.__server._on_conduit_start()
+        self._server._on_conduit_start()
 
 
     def process_parsed_stdout(self, parsed: ParsedResult) -> Context:
         
-        match parsed.event:
-            
-            case Event.PlayerJoin:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerJoin)
-            case Event.PlayerLeft:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerLeft)
-            case Event.PlayerDeath:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerDeath, message=parsed.infos["msg"])
-            case Event.PlayerChat:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerChat, message=parsed.infos["msg"])
-            case Event.PlayerCommand:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerCommand, message=parsed.infos["cmd"])
-            case Event.PlayerWhitelisted:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerWhitelisted, other_player=parsed.infos["other_player"])
-            case Event.PlayerUnwhitelisted:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerUnwhitelisted, other_player=parsed.infos["other_player"])
-            case Event.PlayerOpped:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerOpped, other_player=parsed.infos["other_player"])
-            case Event.PlayerDeopped:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerDeopped, other_player=parsed.infos["other_player"])
-            case Event.PlayerKicked:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerKicked, other_player=parsed.infos["other_player"])
-            case Event.PlayerAdvancement:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerAdvancement, advancement=parsed.infos["advancement"])
-            case Event.PlayerChallenge:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerChallenge, advancement=parsed.infos["challenge"])
-            case Event.PlayerTrigger:
-                return Context(parsed.player, parsed.time, parsed.server, Event.PlayerTrigger, trigger=parsed.infos["trigger"])
-            case Event.SetScoreboardValue:
-                return Context(parsed.player, parsed.time, parsed.server, Event.SetScoreboardValue, other_player=parsed.infos["other_player"], scoreboard=parsed.infos["scoreboard"], value=parsed.infos["value"])
-            case Event.AddScoreboardValue:
-                return Context(parsed.player, parsed.time, parsed.server, Event.AddScoreboardValue, other_player=parsed.infos["other_player"], scoreboard=parsed.infos["scoreboard"], value=parsed.infos["value"], amount=parsed.infos["amount"])
-            case Event.SubScoreboardValue:
-                return Context(parsed.player, parsed.time, parsed.server, Event.SubScoreboardValue, other_player=parsed.infos["other_player"], scoreboard=parsed.infos["scoreboard"], value=parsed.infos["value"], amount=parsed.infos["amount"])
-            case Event.ResetScoreboardValue:
-                return Context(parsed.player, parsed.time, parsed.server, Event.ResetScoreboardValue, other_player=parsed.infos["other_player"], scoreboard=parsed.infos["scoreboard"])
-            case Event.ServerStart:
-                return Context(parsed.player, parsed.time, parsed.server, Event.ServerStart)
-            case Event.ServerStop:
-                return Context(parsed.player, parsed.time, parsed.server, Event.ServerStop)
+        return Context(parsed.player, parsed.time, parsed.server, parsed.event, **parsed.infos)
 
 
     def __call__(
@@ -82,23 +46,30 @@ class EventHandler:
 
         if player_event is not None:
 
-            if player_event.event == Event.PlayerTrigger:
+            if player_event.event == Event.PLAYER_TRIGGER:
                 
-                trigger_name = player_event.infos["trigger"]
+                trigger_name: str = player_event.infos["message"]
 
-                self.__server.execute(f"/scoreboard players enable @e {trigger_name}")
+                self._server.execute(f"/scoreboard players enable @e {trigger_name}")
 
                 if trigger_name.startswith("mconduit-text-"):
-                    self.__server._text_handler.on_player_trigger(player_event)
+                    self._server._text_handler.on_player_trigger(player_event)
 
-            ctx: Context = None # Built once only when needed
-            server_slots = self.__server.slots
+            ctx: Optional[Context] = None # Built once only when needed
+            server_slots = self._server.slots
             
             if player_event.event in server_slots.keys():
                 ctx = self.process_parsed_stdout(player_event)
-                self.__server._on_player_event(ctx)
+                self._server._on_player_event(ctx)
 
-            for plugin in self.__server.plugin_manager.plugins:
+            if player_event.event == Event.PLAYER_SAVED_THE_GAME:
+
+                server_event = copy.copy(player_event)
+                server_event.event = Event.GAME_SAVED
+
+                ctx = self.process_parsed_stdout(server_event)
+
+            for plugin in self._server.plugin_manager.plugins:
                 
                 if player_event.event not in plugin.events.keys():
                     continue
@@ -110,8 +81,17 @@ class EventHandler:
                             ctx = self.process_parsed_stdout(player_event)
 
                         callback(ctx)
-                    except:
-                        ...
+                    except Exception as e:
+                        
+                        if ctx is None:
+
+                            plugin.logger.error(f"Context parsing error: {e}, for event: {player_event.event}")
+                            return
+
+                        ctx.error(e)
+
+                        if ctx.player is None or ctx.player.name == PLAYER_NOT_SUPPORTED:
+                            traceback.print_exc()
                         
 
     def dispatch_log_events(self, line: str) -> None:
@@ -119,12 +99,12 @@ class EventHandler:
         Called at every line to dispatch the log events
         """
 
-        for plugin in self.__server.plugin_manager.plugins:
+        for plugin in self._server.plugin_manager.plugins:
 
-            if Event.OnLog not in plugin.events.keys():
+            if Event.ON_LOG not in plugin.events.keys():
                 continue
 
-            for callback in plugin.events[Event.OnLog]:
+            for callback in plugin.events[Event.ON_LOG]:
                 try:
                     callback(line)
                 except:
@@ -135,38 +115,18 @@ class EventHandler:
         """
         Fetches and dispatch events that aren't enabled by default
         """
-
-        # Tick all the EventListeners
-        """
-        ```
-        How Hyper Fancy Text should work:
-
-        def hello(ctx: Context):
-            ctx.reply("Hello from Python")
-
-        Server.tellraw(text.Text("").click(run_function=hello))
-
-        Server.tellraw(text):
-
-        if text is type(Text) and click_exe:
-
-            scoreboard = Server.generate_new_scoreboard()
-            text.click(run_command="scoreboard")
-            def check_score(fn):
-                if scoreboard:
-                    fn()
-            server.event_listeners.add(check_score)
-        ```
-        """
         
-        for listener in self.__listeners:
-            self.__process_listener(listener)
+        for listener in self._listeners:
+            self._process_listener(listener)
 
-        for plugin in self.__server.plugin_manager.plugins:
-            ...
+        # for plugin in self._server.plugin_manager.plugins:
+        #     ...
 
 
-    def __process_listener(self, listener: Union[Event, EventListener]) -> None:
+    def _process_listener(
+        self,
+        listener: Union[Event, EventListener]
+    ) -> None:
         """
         Run every listener or event separately
         """
@@ -179,43 +139,25 @@ class EventHandler:
                 except:
                     pass
 
-            if hasattr(listener, "__detach_flag"):
-                if getattr(listener, "__detach_flag") is True:
-                    self.__listeners.remove(listener)
+            if hasattr(listener, "_detach_flag"):
+                if getattr(listener, "_detach_flag") is True:
+                    self._listeners.remove(listener)
+
+        return None
 
 
-    def add_listener(self, listener: EventListener, *functions: List[Callable]) -> None:
+    def add_listener(
+        self,
+        listener: EventListener,
+        *functions: Callable
+    ) -> None:
         """
         Adds the given listener to the slots
         """
 
-        self.__listeners.append(listener)
+        self._listeners.append(listener)
 
         for f in functions:
             listener.add_fallback(f)
-    
-    
-    # This function it's quite outdated, will be removed soon
-    # In the meantime, a `_` has been added to it's name to avoid confusion
-    # I know, it's bad
-    def _add_listener(self, event: Event, fn: Callable) -> None:
-        """
-        The function that gets called by the event must have only a single parameter of type Context
-        """
-
-        assert event not in [
-            Event.PlayerLeftClick,
-            Event.PlayerRigthClick,
-            Event.PlayerShift
-        ], "This event is registered by default"
-
-        annotation = fn.__annotations__
-
-        if "return" in annotation.keys():
-            annotation.pop("return")
-
-        for item in annotation.values():
-            param = item
         
-        if type(param) == Context:
-            self.__listeners.setdefault(event, []).append(fn)
+        return None

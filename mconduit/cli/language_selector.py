@@ -1,9 +1,9 @@
 from prompt_toolkit.shortcuts import radiolist_dialog
 from pathlib import Path
 
-from .error_dialog import ErrorDialog
-from .styles import *
-from ..lang import Lang
+from mconduit.cli.error_dialog import ErrorDialog
+from mconduit.cli.styles import *
+from mconduit.lang import Lang
 
 
 class LanguageSelector:
@@ -24,7 +24,8 @@ class LanguageSelector:
 
         if selected_lang is None:
             ErrorDialog(
-
+                "Unable to load lang file",
+                "The selected language file may be corrupted, contact the author of this program"
             ).run()
             raise
 

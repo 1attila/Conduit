@@ -1,7 +1,7 @@
 from prompt_toolkit.shortcuts import print_formatted_text
 from prompt_toolkit.formatted_text import HTML
 
-from ..utils import hex_to_rgb, rgb_to_hex
+from mconduit.utils import hex_to_rgb, rgb_to_hex
 
 
 CONDUIT_LOGO = r"""
@@ -15,10 +15,10 @@ CONDUIT_LOGO = r"""
 
 
 def apply_gradient_horizontal(
-        text: str,
-        start_hex: str,
-        end_hex: str
-    ) -> HTML:
+    text: str,
+    start_hex: str,
+    end_hex: str
+) -> HTML:
     """
     Applies an horizontal gradient (left -> rigth) to the text.
     """

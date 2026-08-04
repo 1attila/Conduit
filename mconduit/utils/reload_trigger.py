@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..handler import Handler
+    from mconduit.handler import Handler
 
 
 def reload_trigger(handler: "Handler") -> None:

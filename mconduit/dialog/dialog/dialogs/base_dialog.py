@@ -19,14 +19,14 @@ class BaseDialog(ABC, Serializable):
     """
 
 
-    __type: Field[DialogType, "type"]
+    _type: Field[DialogType, "type"]
     title: Field[Message]
     external_title: Field[Optional[str], None, None]
     body: Field[Optional[List[BodyFormat]], None, None]
     inputs: Field[Optional[List[BaseInput]], None, None]
     can_close_with_escape: Field[bool, None, True]
     pause: Field[bool, None, True]
-    after_action: Field[AfterAction, None, AfterAction.Close]
+    after_action: Field[AfterAction, None, AfterAction.CLOSE]
 
 
     def __init__(
@@ -38,10 +38,10 @@ class BaseDialog(ABC, Serializable):
         inputs: List[BaseInput] | None = None,
         can_close_with_escape: bool = True,
         pause: bool = True,
-        after_action: AfterAction = AfterAction.Close
-    ) -> "BaseDialog":
+        after_action: AfterAction = AfterAction.CLOSE
+    ) -> None:
         
-        self.__type = type
+        self._type = type
         self.title = title
         self.external_title = external_title
         self.body = body
@@ -51,16 +51,16 @@ class BaseDialog(ABC, Serializable):
         self.after_action = after_action
 
     
-    def to_dict(self) -> Dict[str, Any]:
+    # def to_dict(self) -> Dict[str, Any]:
         
-        return to_json({
-            "external_title": (None, self.external_title),
-            "body": (None, self.body),
-            "inputs": (None, self.inputs),
-            "can_close_with_escape": (True, self.can_close_with_escape),
-            "pause": (True, self.pause),
-            "after_action": (AfterAction.NONE, self.after_action)
-        }) + {
-            "type": self.__type,
-            "title": self.title,
-        }
+    #     return to_json({
+    #         "external_title": (None, self.external_title),
+    #         "body": (None, self.body),
+    #         "inputs": (None, self.inputs),
+    #         "can_close_with_escape": (True, self.can_close_with_escape),
+    #         "pause": (True, self.pause),
+    #         "after_action": (AfterAction.NONE, self.after_action)
+    #     }) + {
+    #         "type": self._type,
+    #         "title": self.title,
+    #     }

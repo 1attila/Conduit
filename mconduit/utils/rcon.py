@@ -1,7 +1,11 @@
 from typing import Optional, Union, List
+import logging
 import math
 
-import rcon
+import rcon # type: ignore[import-untyped]
+
+
+logger = logging.getLogger(__name__)
 
 
 class Rcon:
@@ -13,8 +17,9 @@ class Rcon:
     server_port: int
     rcon_password: str
     timeout: float
-    __all_at_once_active: bool = False
-    __suspended_commands: List[str]
+    log_errors: bool
+    _all_at_once_active: bool
+    _suspended_commands: List[str]
 
 
     def __init__(
@@ -22,7 +27,8 @@ class Rcon:
         server_ip: str,
         server_port: int,
         rcon_password: str,
-        timeout: float = 10
+        timeout: float = 10,
+        log_errors: bool = False
     ) -> None:
         """
         Build and connects the client automatically
@@ -32,24 +38,26 @@ class Rcon:
         self.server_port = server_port
         self.rcon_password = rcon_password
         self.timeout = timeout
+        self.log_errors = log_errors
 
-        self.__suspended_commands = []
+        self._all_at_once_active = False
+        self._suspended_commands = []
 
 
     @property
     def _all_at_once(self):
-        return self.__all_at_once_active
+        return self._all_at_once_active
     
     
     @_all_at_once.setter
     def _all_at_once(self, value: bool):
 
-        self.__all_at_once_active = value
+        self._all_at_once_active = value
 
-        if not self.__all_at_once_active:
+        if not self._all_at_once_active:
 
-            self.execute(self.__suspended_commands)
-            self.__suspended_commands = []
+            self.execute(self._suspended_commands)
+            self._suspended_commands = []
     
 
     def all_at_once(self) -> "AllAtOnce":
@@ -63,7 +71,7 @@ class Rcon:
     def _execute(
         self,
         command: Union[List[str], str]
-    ) -> Optional[Union[List[str], str]]:
+    ) -> Union[List[str], str]:
 
         timeout = self.timeout * (1 if isinstance(command, str) else math.sqrt(len(command)))
 
@@ -89,10 +97,13 @@ class Rcon:
             return ""
         
         except Exception as e:
-            print(f"Rcon error: {e}")
-            print(f"Rcon command: {command}")
 
-            return ""
+            if self.log_errors is True:
+                
+                logger.error(f"Rcon error: {e}")
+                logger.error(f"Rcon command: {command}")
+        
+        return ""
 
 
     def execute(
@@ -107,12 +118,13 @@ class Rcon:
         It might fail for some reasons, in that case returns an empty string
         """
 
-        if self.__all_at_once_active:
+        if self._all_at_once_active:
 
             if isinstance(command, str):
-                self.__suspended_commands.append(command)
+                self._suspended_commands.append(command)
             else:
-                self.__suspended_commands.extend(command)
+                self._suspended_commands.extend(command)
+            return None
         
         else:
             return self._execute(command)

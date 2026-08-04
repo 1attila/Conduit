@@ -1,35 +1,27 @@
-# type: ignore
+from __future__ import annotations
+from typing import Optional, Union, List, TYPE_CHECKING
 
-from typing import Optional, Union, TYPE_CHECKING
-
-from .utils.rcon import Rcon
-from .utils.scoreboards import generate_text_scoreboard, TextScoreboardTracker
-from .enums import At, Difficulty, Gamemode
-from ._types import Message, Player, Vec3d, Coordinate, relative
-from .text import Text, Table
+from mconduit.base_server import BaseServer
+from mconduit.enums import Selector, Difficulty, Gamemode, SoundType
+from mconduit._types import Message, Player, Vec3d, Coordinate, relative
+from mconduit.text import Text, Table
 
 if TYPE_CHECKING:
-    from .conduit_config import ServerRunnerConfig
+    from mconduit.server_runner import ServerRunner
 
-
-class ServerCommandsAPI:
+class ServerCommandsAPI(BaseServer):
     """
     Server commands container
 
     They are all grouped here for redability
     """
 
-    
-    __rcon: Rcon # Initialized from Server
-    
 
-    def init(
+    def __init__(
         self,
-        config: "ServerRunnerConfig",
-        rcon: Rcon
+        runner: ServerRunner
     ) -> None:
-        
-        self.__rcon = rcon
+        super().__init__(runner)
 
 
     # Comunication
@@ -37,7 +29,7 @@ class ServerCommandsAPI:
     def say(
         self,
         msg: Union[str, Text, Table]
-    ):
+    ) -> None:
         """
         Equivalent to `tellraw(@a, msg)`
         """
@@ -47,7 +39,7 @@ class ServerCommandsAPI:
 
     def tellraw(
         self,
-        at: Union[At, Player, str],
+        at: Union[Selector, Player, str],
         msg: Union[str, Text, Table]
     ) -> None:
         """
@@ -68,17 +60,16 @@ class ServerCommandsAPI:
             
             for item in msg.draw():
                 self.tellraw(at, item)
-
-            return
         
-        if type(msg) is str:
+        elif isinstance(msg, str):
             self.execute(f"""/tellraw {at} {{"text": "{msg}"}}""")
 
         else:
 
-            text = self._text_handler.bind_text(msg)
+            text: Text = self._text_handler.bind_text(msg) # type: ignore
+            assert isinstance(text, Text) # cuz mypy complains
             
-            temp_text = text.__str__(self.is_v1_21_5)
+            temp_text = text.__str__(self.is_v1_21_5) # type: ignore
             
             if len(temp_text) > 1400:
 
@@ -88,13 +79,14 @@ class ServerCommandsAPI:
 
                     for text in texts:
                         
-                        text = text.__str__(self.is_v1_21_5)
+                        text = text.__str__(self.is_v1_21_5) # type: ignore
                         self.execute(f"/tellraw {at} {text}")
 
                 return
             
             self.execute(f"/tellraw {at} {temp_text}")
 
+        return None
 
     def team(self):
         ...
@@ -167,26 +159,27 @@ class ServerCommandsAPI:
         self,
         sound: str,
         *,
-        type: str = "ambient",
-        at: At | str ="@a",
+        type: SoundType = SoundType.AMBIENT,
+        at: Selector | Player | str = "@a",
         coords: Optional[Coordinate] = None,
         volume: float = 1,
         pitch: float = 1,
         min_volume: float = 0
     ) -> None:
+
+        if isinstance(at, Player):
+            at = at.name
         
         coord_needed = volume != 1 or pitch != 1 or min_volume != 0
 
         if (
-            (coords is None and coord_needed) is True or
+            (coords is None and coord_needed) or
             str(at).startswith(("@a", "@e"))
         ):
             
             if str(at).startswith(("@a", "@e")):
-
-                players = self.get_online_players() or []
                 
-                for player in players:
+                for player in self.online_players.values():
                     
                     cmd = self._make_playsound_command(
                         sound=sound,
@@ -213,6 +206,9 @@ class ServerCommandsAPI:
                 self.execute(f"execute at {at} run {cmd}")
         
         else:
+
+            assert coords is not None
+
             self.execute(
                 self._make_playsound_command(
                     sound=sound,
@@ -230,8 +226,8 @@ class ServerCommandsAPI:
         self,
         sound: str,
         *,
-        type: str,
-        at: At | str,
+        type: SoundType,
+        at: Selector | str,
         coords: Coordinate = "~ ~ ~",
         volume: float = 1,
         pitch: float = 1,
@@ -259,7 +255,7 @@ class ServerCommandsAPI:
         
         params.reverse()
         required.reverse()
-        params_to_pass = []
+        params_to_pass: List[str] = []
         required_flag = False
 
         for p, r in zip(params, required):
@@ -267,7 +263,7 @@ class ServerCommandsAPI:
             required_flag = required_flag or r
 
             if required_flag is True:
-                params_to_pass.append(p)
+                params_to_pass.append(str(p))
 
         if len(params_to_pass) > 0:
 
@@ -279,9 +275,9 @@ class ServerCommandsAPI:
     
     def stopsound(
         self,
-        at: str,
+        at: str | Selector,
         sound: str,
-        type="ambient"
+        type: SoundType = SoundType.AMBIENT
     ) -> None:
         self.execute(f"/stopsound {at} {type} {sound}")
     
@@ -302,3 +298,39 @@ class ServerCommandsAPI:
 
     def loot(self):
         ...
+
+
+    def save_all(
+        self,
+        flush: bool = False
+    ) -> None:
+        """
+        Saves everything to the data storage.
+
+        If flush is `True`, chunks are saved immediately, causing the server to freeze shortly.
+
+        Things that are saved:
+
+        - Chunks
+        - Entities
+        - Scoreboards / objectives / teams
+        """
+
+        if flush is True:
+
+            self.save_all_flush()
+            return
+        
+        self.execute("save-all")
+
+
+    def save_all_flush(self) -> None:
+        """
+        Equivalent to `save_all(True)`
+        
+        NOTE: This causes the server to freeze shortly.
+        
+        If you want to save everything not immediately go for `save_all()`
+        """
+
+        self.execute("save-all flush")

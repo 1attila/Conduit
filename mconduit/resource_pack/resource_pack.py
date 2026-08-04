@@ -1,8 +1,10 @@
 from typing import Optional, List, Dict, TYPE_CHECKING
 from pathlib import Path
 import threading
+import logging
 import shutil
 import json
+import re
 import os
 
 from .resource_saver import sha1 # NOTE: this does not support external machines!
@@ -12,6 +14,8 @@ from ..sound import Sound, InvalidSoundExtension, convert_to_ogg
 if TYPE_CHECKING:
     from ..server import Server
 
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_PACK_FORMAT = 34
 PACK_MCMETA_FILENAME = "pack.mcmeta"
@@ -45,7 +49,7 @@ class ResourcePack:
     def __init__(
         self,
         server: "Server",
-        pack_format: int=DEFAULT_PACK_FORMAT
+        pack_format: int = DEFAULT_PACK_FORMAT
     ) -> None:
         
         self.__server = server
@@ -72,7 +76,7 @@ class ResourcePack:
 
         except Exception as e:
 
-            print(f"Unable to create resource pack for {self.__server.name}, error:", e)
+            logger.error(f"Unable to create resource pack for {self.__server.name}, error: ", e)
             return
 
         (self.dev_dir / PACK_MCMETA_FILENAME).write_text(mc_meta)
@@ -201,10 +205,11 @@ class ResourcePack:
         if not sound_path.is_file():
             raise ValueError("The given sound path is not a file")
 
-        if not sound_path.suffix.lower() in SUPPORTED_SOUND_EXT:
+        if sound_path.suffix.lower() not in SUPPORTED_SOUND_EXT:
             raise InvalidSoundExtension
         
-        sound.file_path = self.sounds_dir / self.clear_resource_name(sound_path.with_suffix(".ogg").name)
+        new_filename = self.clear_resource_name(sound_path.with_suffix("").name) + ".ogg"
+        sound.file_path = self.sounds_dir / new_filename
         convert_to_ogg(sound_path, sound.file_path)
 
         return sound
@@ -212,7 +217,9 @@ class ResourcePack:
     
     def add_sounds(self, sound_name: str, *sounds: Sound) -> None:
         """
-        Adds the given sound to this resource pack
+        Adds the given sound to this resource pack.
+
+        Note this function its VERY slow and expensive, as it converts the sounds with ffmpeg
         """
 
         if sound_name in self.sounds.keys():
@@ -225,7 +232,7 @@ class ResourcePack:
 
         sounds_mapping[sound_name] = new_sounds
         sounds_mapping = { # type: ignore
-            k: {
+            k: { # type: ignore
                 "sounds": [
                     {
                         "name": f"{self.NAMESPACE}:{item.file_path.with_suffix('').name}",
@@ -244,12 +251,16 @@ class ResourcePack:
     
     def clear_resource_name(self, name: str) -> str:
 
-        TO_REPLACE = [" ", "-", "_", "(", ")", "[", "]"]
-        
-        for to_replace in TO_REPLACE:
-            name = name.replace(to_replace, "")
+        name = name.lower()
+        name = re.sub(r"[^a-z0-9]", "", name)
 
-        return name.lower()
+        if len(name) > 10:
+            name = name[:10]
+
+        elif len(name) == 0:
+            raise RuntimeError("Invalid resource name!")
+
+        return name
 
     
     def remove_namespace(self, name: str) -> str:

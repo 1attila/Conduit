@@ -1,11 +1,11 @@
-from typing import TypeVar, Type, TYPE_CHECKING
+from typing import TypeVar, Type, Dict, Any, TYPE_CHECKING
 from pathlib import Path
 import json
 
-from .. import constants 
+from mconduit import constants 
 
 if TYPE_CHECKING:
-    from .plugin import Plugin
+    from mconduit.plugins.plugin import Plugin
 
 
 C = TypeVar("C", bound="Config")
@@ -20,19 +20,19 @@ class Config:
     Base class that represent plugin's config.
 
     Config are always named `config.json` and are inside the plugin folder
+    
+    Example::
 
-    Usage:
-    ```
-    class MyConfig(plugins.Config):
-        my_value: str=None
+        class MyConfig(plugins.Config):
+            my_value: str = None
 
-    class MyPlugin(plugins.Plugin[MyConfig]):
-        ...
-    ```
+        class MyPlugin(plugins.Plugin):
+
+            config: MyConfig
     """
 
     
-    __path: Path
+    _path: Path
     
     
     @classmethod
@@ -44,13 +44,13 @@ class Config:
         """
 
         instance = cls()
-        instance.__plugin = plugin # type: ignore
-        cls.__path = Path(constants.PLUGINS_DIR) / plugin.name / constants.CONFIG_FILENAME
+        instance._plugin = plugin # type: ignore
+        cls._path = plugin.path / plugin.server.name / constants.CONFIG_FILENAME
 
-        if not cls.__path.exists():
+        if not cls._path.exists():
             
-            configs = {}
-
+            configs: Dict[str, Any] = {}
+            
             for item in getattr(cls, "__annotations__", {}):
                 
                 if item.startswith("_"):
@@ -58,15 +58,15 @@ class Config:
                 
                 value = getattr(cls, item, NoValue)
 
-                if value is NoValue:
+                if isinstance(value, NoValue):
                     configs[item] = ""
                 else:
                     configs[item] = value
 
-            with open(cls.__path, "w") as f:
+            with open(cls._path, "w") as f:
                 json.dump(configs, f, indent=4)
 
-        with open(cls.__path, "r") as f:
+        with open(cls._path, "r") as f:
             
             configs = json.load(f)
 
@@ -85,7 +85,7 @@ class Config:
                 else:
                     configs[item] = value
 
-        with open(cls.__path, "w") as f: # In case the plugin has updated it's configs
+        with open(cls._path, "w") as f: # In case the plugin has updated it's configs
             json.dump(configs, f, indent=4)
 
         return instance
@@ -108,5 +108,5 @@ class Config:
                 else:
                     configs[item] = ""
 
-        with open(self.__path, "w") as f:
+        with open(self._path, "w") as f:
             json.dump(configs, f, indent=4)

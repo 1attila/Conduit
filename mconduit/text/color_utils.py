@@ -1,8 +1,8 @@
 from typing import Union
 import copy
 
-from .text import Text
-from ..enums import Color
+from mconduit.text.text import Text
+from mconduit.enums.color import Color
 
 
 def default_color(color: Color) -> "TextWithDefaultColor":

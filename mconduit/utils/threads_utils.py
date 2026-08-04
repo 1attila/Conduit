@@ -1,6 +1,7 @@
-from typing import Callable, Optional, TypeVar, Any
+from typing import Callable, Optional, TypeVar, TYPE_CHECKING
 
-from ..plugins import Plugin
+if TYPE_CHECKING:
+    from mconduit.plugins import Plugin
 
 
 T = TypeVar("T")

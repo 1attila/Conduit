@@ -2,7 +2,7 @@ import enum
 
 
 class InputType(str, enum.Enum):
-    Text         = "text"
-    Boolean      = "boolean"
-    SingleOption = "single_option"
-    NumberRange  = "number_range"
+    TEXT          = "text"
+    BOOLEAN       = "boolean"
+    SINGLE_OPTION = "single_option"
+    NUMBER_RANGE  = "number_range"

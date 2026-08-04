@@ -1,12 +1,16 @@
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.shortcuts import message_dialog
 
-from .styles import *
+from mconduit.cli.styles import *
 
 
 class ErrorDialog:
 
-    def __init__(self, title: str, text: str) -> None:
+    def __init__(
+        self,
+        title: str,
+        text: str
+    ) -> None:
         self.title = title
         self.text = text
 

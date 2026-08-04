@@ -1,13 +1,13 @@
 from typing import TYPE_CHECKING
 
-from ..conduit_config import HandlerConfig
-from .language_selector import LanguageSelector
-from .prefix_setter import PrefixSetter
-from .error_dialog import ErrorDialog
-from .add_server import AddServer
+from mconduit.conduit_config import HandlerConfig
+from mconduit.cli.language_selector import LanguageSelector
+from mconduit.cli.prefix_setter import PrefixSetter
+from mconduit.cli.error_dialog import ErrorDialog
+from mconduit.cli.add_server import AddServer
 
 if TYPE_CHECKING:
-    from ..handler import Handler
+    from mconduit.handler import Handler
 
 
 class SetupWizard:

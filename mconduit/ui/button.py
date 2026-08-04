@@ -1,7 +1,7 @@
 
 
-from .._types import Message
-from .component import BaseComponent
+from mconduit._types import Message
+from mconduit.ui.component import BaseComponent
 
 
 class Button(BaseComponent):

@@ -1,7 +1,7 @@
 from prompt_toolkit.shortcuts import input_dialog
 import os
 
-from .styles import *
+from mconduit.cli.styles import *
 
 
 

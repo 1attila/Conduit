@@ -3,7 +3,7 @@ from typing import Optional, List, TYPE_CHECKING
 import parse
 
 if TYPE_CHECKING:
-    from ..server import Server
+    from mconduit.server import Server
 
 
 def get_teams(server: "Server") -> Optional[List[str]]:
@@ -12,7 +12,7 @@ def get_teams(server: "Server") -> Optional[List[str]]:
     """
 
     if not server.is_running:
-        return
+        return None
     
     response = server.execute("/team list")
 
@@ -26,3 +26,5 @@ def get_teams(server: "Server") -> Optional[List[str]]:
             teams = [teams]
 
         return [team[1:-1] for team in teams]
+
+    return None

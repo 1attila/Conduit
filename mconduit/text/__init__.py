@@ -36,8 +36,8 @@ from .icon import (
     play,
     check_mark,
     x,
-    tree_dots_horizontal,
-    tree_dots_vertical,
+    three_dots_horizontal,
+    three_dots_vertical,
     info,
     warn,
     bell,
@@ -55,9 +55,9 @@ from .icon import (
     folder,
     refresh
 )
-from .table import Table, DisplayMode, Alignment
+from .table import Table, DisplayMode, Alignment # type: ignore
 from .characters import MINECRAFT_FONT_WIDTHS, pixel_len
-from .text_utils import random_list
+from .text_utils import random_list # type: ignore
 
 
 __all__ = [
@@ -91,8 +91,8 @@ __all__ = [
     "play",
     "check_mark",
     "x",
-    "tree_dots_horizontal",
-    "tree_dots_vertical",
+    "three_dots_horizontal",
+    "three_dots_vertical",
     "info",
     "warn",
     "bell",

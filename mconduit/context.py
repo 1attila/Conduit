@@ -1,13 +1,14 @@
-from typing import Union, Optional, Tuple, List, TYPE_CHECKING
+from __future__ import annotations
+from typing import Union, Optional, Tuple, TYPE_CHECKING
 import time
 
-from ._types import Player, Message
-from .utils import ConduitError
-from .text import text
-from .event import Event
+from mconduit._types import Player, Message
+from mconduit.utils.errors import ConduitError
+from mconduit.text import text
+from mconduit.event import Event, SCOREBOARDS_EVENTS, SERVER_EVENTS
 
 if TYPE_CHECKING:
-    from .server import Server
+    from mconduit.server import Server
 
 
 class Context:
@@ -18,24 +19,24 @@ class Context:
     """
 
 
-    __player: Optional[Player]
-    __other_player: Optional[Player]
-    __message: Optional[str]
-    __amount: Optional[int]
-    __value: Optional[int]
-    __id: Optional[int]
-    __time: Tuple
-    __server: "Server"
-    __event_type: Event
-    __is_server_event: bool
+    _player: Optional[Player]
+    _other_player: Optional[Player]
+    _message: Optional[str]
+    _amount: Optional[int]
+    _value: Optional[int]
+    _id: Optional[int]
+    _time: Tuple
+    _server: Server
+    _event_type: Event
+    _is_server_event: bool
     
 
     def __init__(
         self,
         player: str,
         time: Tuple,
-        server: "Server",
-        event_type: "Event",
+        server: Server,
+        event_type: Event,
         *,
         message: Optional[str] = None,
         advancement: Optional[str] = None,
@@ -47,17 +48,17 @@ class Context:
         id: Optional[int] = None
     ) -> None:
         
-        self.__is_server_event = event_type in [Event.ServerStart, Event.ServerStop]
+        self._is_server_event = event_type in SERVER_EVENTS
 
-        if not self.__is_server_event:
-            self.__player = Player(player, server)
+        if not self._is_server_event:
+            self._player = Player(player, server)
         else:
-            self.__player = None
+            self._player = None
 
         if other_player is not None:
-            self.__other_player = Player(other_player, server)
+            self._other_player = Player(other_player, server)
         else:
-            self.__other_player = None
+            self._other_player = None
 
         if advancement is not None:
             message = advancement
@@ -68,16 +69,16 @@ class Context:
         elif trigger is not None:
             message = trigger
 
-        self.__amount = amount
-        self.__value = value
-        self.__id = id
-        self.__time = time
-        self.__server = server
-        self.__message = message
-        self.__event_type = event_type
+        self._amount = amount
+        self._value = value
+        self._id = id
+        self._time = time
+        self._server = server
+        self._message = message
+        self._event_type = event_type
 
     
-    def wait_for_player(self, timeout: float=10) -> bool:
+    def wait_for_player(self, timeout: float = 10) -> bool: # NOTE This is very outdated
         """
         Tries to fetch the player every 0.5 seconds
 
@@ -88,22 +89,24 @@ class Context:
         Returns True only if it manages to fetch the player in the given timeout
         """
 
-        if self.__is_server_event:
+        if self._is_server_event:
             return False
 
         if (
-            self.__event_type != Event.PlayerJoin or
-            isinstance(self.__player, Player)
-            ):
+            self._event_type != Event.PLAYER_JOIN or
+            isinstance(self._player, Player)
+        ):
             return True
         
         start_time = time.time()
 
         while time.time() - start_time < timeout:
-            
-            if player:= self.__server.get_player_by_name(self.__player):
 
-                self.__player = player
+            assert self._player is not None
+            
+            if player:= self._server.get_player_by_name(self._player):
+
+                self._player = player
                 return True
             
             time.sleep(0.5)
@@ -114,22 +117,19 @@ class Context:
     @property
     def player(self) -> Optional[Player]:
         """
-        Player this context is referring to.
-
-        If the event is ServerStart or ServerStop returns None
-        If the event is PlayerJoin you can call wait_for_player() method if you don't need just the player name 
+        Player this context is referring to
         """
 
-        if self.__is_server_event:
-            return
+        if self._is_server_event:
+            return None
 
-        return self.__player
+        return self._player
     
 
     @property
     def other_player(self) -> Optional[Player]:
         """
-        Returns the player that has:
+        Returns the player that has been:
         - whitelisted
         - unwhitelisted
         - opped
@@ -146,7 +146,7 @@ class Context:
         ```
         """
 
-        return self.__other_player
+        return self._other_player
     
 
     @property
@@ -155,8 +155,10 @@ class Context:
         Player advancement, if any
         """
 
-        if self.__event_type == Event.PlayerAdvancement:
-            return self.__message
+        if self._event_type == Event.PLAYER_ADVANCEMENT:
+            return self._message
+
+        return None
 
     
     @property
@@ -165,8 +167,10 @@ class Context:
         Player challenge, if any
         """
 
-        if self.__event_type == Event.PlayerChallenge:
-            return self.__message
+        if self._event_type == Event.PLAYER_CHALLENGE:
+            return self._message
+
+        return None
         
 
     @property
@@ -175,8 +179,10 @@ class Context:
         Event scoreboard, if any
         """
 
-        if self.__event_type in [Event.SetScoreboardValue, Event.AddScoreboardValue, Event.SubScoreboardValue, Event.ResetScoreboardValue]:
-            return self.__message
+        if self._event_type in SCOREBOARDS_EVENTS:
+            return self._message
+
+        return None
 
     
     @property
@@ -185,7 +191,7 @@ class Context:
         Trigger name, if any
         """
 
-        return self.__message
+        return self._message
         
 
     @property
@@ -194,7 +200,7 @@ class Context:
         Scoreboard objective value, if any
         """
 
-        return self.__value
+        return self._value
     
 
     @property
@@ -203,7 +209,7 @@ class Context:
         Scoreboard objective increase/decrease amount, if any 
         """
 
-        return self.__amount
+        return self._amount
     
 
     @property
@@ -214,8 +220,10 @@ class Context:
         None, if hes not death
         """
 
-        if self.__event_type == Event.PlayerDeath:
-            return self.__message
+        if self._event_type == Event.PLAYER_DEATH:
+            return self._message
+
+        return None
     
 
     @property
@@ -226,8 +234,10 @@ class Context:
         None, if theres no message
         """
 
-        if self.__event_type == Event.PlayerChat:
-            return self.__message
+        if self._event_type == Event.PLAYER_CHAT:
+            return self._message
+
+        return None
 
 
     @property
@@ -238,8 +248,10 @@ class Context:
         None, if theres no command
         """
 
-        if self.__event_type == Event.PlayerCommand:
-            return self.__message
+        if self._event_type == Event.PLAYER_COMMAND:
+            return self._message
+
+        return None
     
 
     @property
@@ -252,8 +264,10 @@ class Context:
         This is used when you want to assign same or similar behaviour to lots of buttons and you need to distingue them
         """
         
-        if self.__event_type == Event.TextClick:
-            return self.__id
+        if self._event_type == Event.TEXT_CLICK:
+            return self._id
+
+        return None
     
 
     @property
@@ -264,16 +278,16 @@ class Context:
         HH:MM:SS
         """
 
-        return self.__time
+        return self._time
     
 
     @property
-    def server(self) -> "Server":
+    def server(self) -> Server:
         """
         The server on which the event was triggered
         """
 
-        return self.__server
+        return self._server
 
 
     @property
@@ -282,7 +296,7 @@ class Context:
         Event type
         """
 
-        return self.__event_type
+        return self._event_type
 
 
     def say(
@@ -294,8 +308,8 @@ class Context:
         Sends something to the server where the event was triggered
         """
 
-        if self.event_type == Event.ServerStop:
-            return
+        if self.event_type == Event.SERVER_STOP:
+            return None
 
         if len(messages):
             joint_messages = message
@@ -305,8 +319,10 @@ class Context:
 
             message = joint_messages
         
-        if self.__event_type != Event.PlayerLeft:
-            self.__server.tellraw("@a", message)
+        if self._event_type != Event.PLAYER_LEFT:
+            self._server.tellraw("@a", message)
+
+        return None
 
     
     def reply(
@@ -320,11 +336,11 @@ class Context:
         Avaiable only if the event is different than PlayerLeft
         """
 
-        if self.__is_server_event:
-            return
+        if self._is_server_event:
+            return None
 
         if not self.wait_for_player():
-            return
+            return None
 
         if len(messages):
             joint_messages = message
@@ -334,8 +350,13 @@ class Context:
 
             message = joint_messages
         
-        if self.__event_type != Event.PlayerLeft:
-            self.__server.tellraw(self.__player.name, message)
+        if self._event_type != Event.PLAYER_LEFT:
+
+            assert isinstance(self._player, Player)
+
+            self._server.tellraw(self._player.name, message)
+
+        return None
     
 
     def info(self, info: Union[text.Text, str]) -> None:
@@ -345,11 +366,13 @@ class Context:
 
         if isinstance(info, text.Text):
             
-            info.color = text.Color.Gray
+            info.gray()
             self.reply(info)
-            return
+            return None
         
         self.reply(text.gray(info))
+
+        return None
 
 
     def success(self, msg: Union[text.Text, str]) -> None:
@@ -359,11 +382,13 @@ class Context:
 
         if isinstance(msg, text.Text):
             
-            msg.color = text.Color.Green
+            msg.green()
             self.reply(msg)
-            return
+            return None
 
         self.reply(text.green(msg))
+
+        return None
 
     
     def error(self, err: Union[Exception, text.Text, str]) -> None:
@@ -373,16 +398,18 @@ class Context:
 
         if isinstance(err, text.Text):
             
-            err.color = text.Color.Red
+            err.red()
             self.reply(err)
-            return
+            return None
         
         if isinstance(err, Exception):
             
             self.reply(ConduitError.from_exception(err).to_text())
-            return
+            return None
 
         self.reply(text.red(err))
+
+        return None
 
     
     def warn(self, warn: Union[Warning, text.Text, str]) -> None:
@@ -392,11 +419,72 @@ class Context:
         
         if isinstance(warn, text.Text):
             
-            warn.color = text.Color.Gold
+            warn.gold()
             self.reply(warn)
-            return
+            return None
 
         if not isinstance(warn, str):
             warn = type(warn).__name__
 
         self.reply(text.gold(warn))
+
+        return None
+
+
+    def notify(
+        self,
+        *messages: Message,
+        fade_in: int = 2,
+        duration: int = 15, # AKA: stay
+        fade_out: int = 5
+    ) -> None:
+        """
+        Displays the current text in the player actionbar
+        """
+
+        message = messages[0]
+
+        for msg in messages[1:]:
+            message += msg
+
+        if isinstance(message, text.Text):
+            message = str(message) # NOTE: colors / styles are version indipendent, no need to pass v1_21_5
+
+        self.server.execute([
+            f"title {self.player} times {fade_in} {duration} {fade_out}",
+            f"title {self.player} actionbar {message}"
+        ])
+
+        return None
+
+    
+    def notify_success(
+        self,
+        *messages: Message,
+        fade_in: int = 2,
+        duration: int = 15, # AKA: stay
+        fade_out: int = 5
+    ) -> None:
+        """
+        Displays the given message in green in the player actionbar
+        """
+
+        message = messages[0]
+
+        for msg in messages[1:]:
+            message += msg
+
+        if isinstance(message, text.Text):
+            message.green()
+        
+        else:
+            message = text.green(message)
+
+        self.notify(
+            message,
+            fade_in=fade_in,
+            duration=duration,
+            fade_out=fade_out
+        )
+
+        return None

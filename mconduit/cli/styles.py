@@ -9,6 +9,13 @@ DARK_BG = "#0a0a12"
 ICE_BLUE = "#D0F0FF"
 ERROR_RED = "#FF3333"
 
+# Colors to Builtin permissions
+GRAY = "#AAAAAA"
+YELLOW = "#FFFF55"
+AQUA = "#55FFFF"
+DARK_AQUA = "#00AAAA"
+BLUE = "#5555FF"
+
 
 welcome_style = Style.from_dict({
     "frame.border":       f"{NEON_CYAN}",
